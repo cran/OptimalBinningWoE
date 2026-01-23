@@ -1,0 +1,332 @@
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+# OptimalBinningWoE <a href="https://evandeilton.github.io/OptimalBinningWoE/"><img src="man/figures/logo.png" align="right" height="139" alt="OptimalBinningWoE website" /></a>
+
+<!-- badges: start -->
+
+[![CRAN
+status](https://www.r-pkg.org/badges/version/OptimalBinningWoE)](https://CRAN.R-project.org/package=OptimalBinningWoE)
+[![R-CMD-check](https://github.com/evandeilton/OptimalBinningWoE/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/evandeilton/OptimalBinningWoE/actions/workflows/R-CMD-check.yaml)
+[![Downloads](https://cranlogs.r-pkg.org/badges/grand-total/OptimalBinningWoE)](https://cran.r-project.org/package=OptimalBinningWoE)
+[![License:
+MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Lifecycle:
+stable](https://img.shields.io/badge/lifecycle-stable-brightgreen.svg)](https://lifecycle.r-lib.org/articles/stages.html#stable)
+<!-- badges: end -->
+
+## Overview
+
+**OptimalBinningWoE** is a high-performance R package for **optimal
+binning** and **Weight of Evidence (WoE)** transformation, designed for
+credit scoring, risk assessment, and predictive modeling applications.
+
+### Why OptimalBinningWoE?
+
+| Feature | Benefit |
+|----|----|
+| **36 Algorithms** | Choose the best method for your data characteristics |
+| **C++ Performance** | Process millions of records efficiently via Rcpp/RcppEigen |
+| **tidymodels Ready** | Seamless integration with modern ML pipelines |
+| **Regulatory Compliance** | Monotonic binning for Basel/IFRS 9 requirements |
+| **Production Quality** | Comprehensive testing and documentation |
+
+## Installation
+
+``` r
+# Install from CRAN (when available)
+install.packages("OptimalBinningWoE")
+
+# Or install the development version from GitHub
+# install.packages("pak")
+pak::pak("evandeilton/OptimalBinningWoE")
+```
+
+## Quick Start
+
+### Basic Usage
+
+``` r
+library(OptimalBinningWoE)
+
+# Create sample data
+set.seed(123)
+df <- data.frame(
+  age = rnorm(1000, 45, 15),
+  income = exp(rnorm(1000, 10, 0.5)),
+  education = sample(c("HS", "BA", "MA", "PhD"), 1000, replace = TRUE),
+  target = rbinom(1000, 1, 0.15)
+)
+
+# Automatic optimal binning with WoE calculation
+result <- obwoe(
+  data = df,
+  target = "target",
+  algorithm = "jedi", # Joint Entropy-Driven Information
+  min_bins = 3,
+  max_bins = 6
+)
+
+# View summary
+print(result)
+
+# Examine binning details
+result$results$age
+```
+
+### Integration with tidymodels
+
+``` r
+library(tidymodels)
+library(OptimalBinningWoE)
+
+# Create a preprocessing recipe with WoE transformation
+rec <- recipe(default ~ ., data = credit_data) %>%
+  step_obwoe(
+    all_predictors(),
+    outcome = "default",
+    algorithm = "mob", # Monotonic Optimal Binning
+    min_bins = 3,
+    max_bins = tune(), # Tune the number of bins
+    output = "woe"
+  )
+
+# Works seamlessly in ML workflows
+workflow() %>%
+  add_recipe(rec) %>%
+  add_model(logistic_reg()) %>%
+  fit(data = training_data)
+```
+
+## Core Concepts
+
+### Weight of Evidence (WoE)
+
+WoE quantifies the predictive power of each bin by measuring the
+log-odds ratio:
+
+$$\text{WoE}_i = \ln\left(\frac{\text{Distribution of Goods}_i}{\text{Distribution of Bads}_i}\right)$$
+
+**Interpretation:**
+
+- **WoE \> 0**: Lower risk than average (more “goods” than expected)
+- **WoE \< 0**: Higher risk than average (more “bads” than expected)
+- **WoE ≈ 0**: Similar to population average
+
+### Information Value (IV)
+
+IV measures the overall predictive power of a feature:
+
+$$\text{IV} = \sum_{i=1}^{n} (\text{Dist. Goods}_i - \text{Dist. Bads}_i) \times \text{WoE}_i$$
+
+| IV Range    | Predictive Power | Recommendation         |
+|-------------|------------------|------------------------|
+| \< 0.02     | Unpredictive     | Exclude                |
+| 0.02 – 0.10 | Weak             | Use cautiously         |
+| 0.10 – 0.30 | Medium           | Good predictor         |
+| 0.30 – 0.50 | Strong           | Excellent predictor    |
+| \> 0.50     | Suspicious       | Check for data leakage |
+
+## Algorithm Reference
+
+OptimalBinningWoE provides **36 algorithms** optimized for different
+scenarios:
+
+### Universal Algorithms (Numerical & Categorical)
+
+| Algorithm | Function | Best For |
+|----|----|----|
+| **JEDI** | `ob_numerical_jedi()` | General purpose, balanced performance |
+| **MOB** | `ob_numerical_mob()` | Regulatory compliance (monotonic) |
+| **ChiMerge** | `ob_numerical_cm()` | Statistical significance-based merging |
+| **DP** | `ob_numerical_dp()` | Optimal partitioning with constraints |
+| **Sketch** | `ob_numerical_sketch()` | Large-scale / streaming data |
+
+### Numerical-Only Algorithms (20)
+
+| Algorithm | Function              | Specialty                                |
+|-----------|-----------------------|------------------------------------------|
+| **MDLP**  | `ob_numerical_mdlp()` | Entropy-based discretization             |
+| **MBLP**  | `ob_numerical_mblp()` | Monotonic binning via linear programming |
+| **IR**    | `ob_numerical_ir()`   | Isotonic regression binning              |
+| **EWB**   | `ob_numerical_ewb()`  | Fast equal-width binning                 |
+| **KMB**   | `ob_numerical_kmb()`  | K-means clustering approach              |
+
+<details>
+
+<summary>
+
+<strong>View all 20 numerical algorithms</strong>
+</summary>
+
+| Acronym   | Full Name               | Description              |
+|-----------|-------------------------|--------------------------|
+| BB        | Branch and Bound        | Exact optimization       |
+| CM        | ChiMerge                | Chi-square merging       |
+| DMIV      | Decision Tree MIV       | Recursive partitioning   |
+| DP        | Dynamic Programming     | Optimal partitioning     |
+| EWB       | Equal Width             | Fixed-width bins         |
+| Fast-MDLP | Fast MDLP               | Optimized entropy        |
+| FETB      | Fisher’s Exact Test     | Statistical significance |
+| IR        | Isotonic Regression     | Order-preserving         |
+| JEDI      | Joint Entropy-Driven    | Information maximization |
+| JEDI-MWoE | JEDI Multinomial        | Multi-class targets      |
+| KMB       | K-Means Binning         | Clustering-based         |
+| LDB       | Local Density           | Density estimation       |
+| LPDB      | Local Polynomial        | Smooth density           |
+| MBLP      | Monotonic LP            | LP optimization          |
+| MDLP      | Min Description Length  | Entropy-based            |
+| MOB       | Monotonic Optimal       | IV-optimal + monotonic   |
+| MRBLP     | Monotonic Regression LP | Regression + LP          |
+| OSLP      | Optimal Supervised LP   | Supervised learning      |
+| Sketch    | KLL Sketch              | Streaming quantiles      |
+| UBSD      | Unsupervised StdDev     | Standard deviation       |
+| UDT       | Unsupervised DT         | Decision tree            |
+
+</details>
+
+### Categorical-Only Algorithms (16)
+
+| Algorithm | Function                | Specialty                 |
+|-----------|-------------------------|---------------------------|
+| **SBLP**  | `ob_categorical_sblp()` | Similarity-based grouping |
+| **IVB**   | `ob_categorical_ivb()`  | IV maximization           |
+| **GMB**   | `ob_categorical_gmb()`  | Greedy monotonic          |
+| **SAB**   | `ob_categorical_sab()`  | Simulated annealing       |
+
+<details>
+
+<summary>
+
+<strong>View all 16 categorical algorithms</strong>
+</summary>
+
+| Acronym   | Full Name            | Description              |
+|-----------|----------------------|--------------------------|
+| CM        | ChiMerge             | Chi-square merging       |
+| DMIV      | Decision Tree MIV    | Recursive partitioning   |
+| DP        | Dynamic Programming  | Optimal partitioning     |
+| FETB      | Fisher’s Exact Test  | Statistical significance |
+| GMB       | Greedy Monotonic     | Greedy monotonic binning |
+| IVB       | Information Value    | IV maximization          |
+| JEDI      | Joint Entropy-Driven | Information maximization |
+| JEDI-MWoE | JEDI Multinomial     | Multi-class targets      |
+| MBA       | Modified Binning     | Modified approach        |
+| MILP      | Mixed Integer LP     | LP optimization          |
+| MOB       | Monotonic Optimal    | IV-optimal + monotonic   |
+| SAB       | Simulated Annealing  | Stochastic optimization  |
+| SBLP      | Similarity-Based LP  | Similarity grouping      |
+| Sketch    | Count-Min Sketch     | Streaming counts         |
+| SWB       | Sliding Window       | Window-based             |
+| UDT       | Unsupervised DT      | Decision tree            |
+
+</details>
+
+## Algorithm Selection Guide
+
+| Use Case | Recommended | Rationale |
+|----|----|----|
+| **General Credit Scoring** | `jedi`, `mob` | Best balance of speed and predictive power |
+| **Regulatory Compliance** | `mob`, `mblp`, `ir` | Guaranteed monotonic WoE patterns |
+| **Large Datasets (\>1M rows)** | `sketch`, `ewb` | Sublinear memory, single-pass |
+| **High Cardinality Categorical** | `sblp`, `gmb`, `ivb` | Intelligent category grouping |
+| **Interpretability Focus** | `dp`, `mdlp` | Clear, explainable bins |
+| **Multi-class Targets** | `jedi_mwoe` | Multinomial WoE support |
+
+## Key Functions
+
+| Function          | Purpose                                    |
+|-------------------|--------------------------------------------|
+| `obwoe()`         | Main interface for optimal binning and WoE |
+| `obwoe_apply()`   | Apply learned binning to new data          |
+| `obwoe_gains()`   | Compute gains table with KS, Gini, lift    |
+| `step_obwoe()`    | tidymodels recipe step                     |
+| `ob_preprocess()` | Data preprocessing with outlier handling   |
+
+## Example Workflow
+
+``` r
+library(OptimalBinningWoE)
+
+# 1. Fit binning model on training data
+model <- obwoe(
+  data = train_data,
+  target = "default",
+  algorithm = "mob",
+  min_bins = 3,
+  max_bins = 5
+)
+
+# 2. View feature importance by IV
+print(model$summary[order(-model$summary$total_iv), ])
+
+# 3. Apply transformation
+train_woe <- obwoe_apply(train_data, model)
+test_woe <- obwoe_apply(test_data, model)
+
+# 4. Compute performance metrics
+gains <- obwoe_gains(model, feature = "income")
+print(gains)
+plot(gains, type = "ks")
+```
+
+## Performance
+
+OptimalBinningWoE is optimized for speed through:
+
+- **RcppEigen**: Vectorized linear algebra operations
+- **Efficient algorithms**: O(n log n) or better complexity
+- **Memory-conscious design**: Streaming algorithms for large data
+
+Typical performance on a standard laptop:
+
+| Data Size | Processing Time |
+|-----------|-----------------|
+| 100K rows | \< 1 second     |
+| 1M rows   | 2-5 seconds     |
+| 10M rows  | 20-60 seconds   |
+
+## Documentation
+
+- 📖 [Package
+  Vignette](https://evandeilton.github.io/OptimalBinningWoE/articles/introduction.html):
+  Comprehensive guide with examples
+- 📚 [Function
+  Reference](https://evandeilton.github.io/OptimalBinningWoE/reference/):
+  Complete API documentation
+- 🐛 [Issue
+  Tracker](https://github.com/evandeilton/OptimalBinningWoE/issues):
+  Report bugs or request features
+
+## Contributing
+
+Contributions are welcome! Please see our [Contributing
+Guidelines](https://github.com/evandeilton/OptimalBinningWoE/blob/main/CONTRIBUTING.md)
+and [Code of
+Conduct](https://github.com/evandeilton/OptimalBinningWoE/blob/main/CODE_OF_CONDUCT.md).
+
+## Citation
+
+If you use OptimalBinningWoE in your research, please cite:
+
+``` bibtex
+@software{optimalbinningwoe,
+  author = {José Evandeilton Lopes},
+  title = {OptimalBinningWoE: Optimal Binning and Weight of Evidence Framework for Modeling},
+  year = {2026},
+  url = {https://github.com/evandeilton/OptimalBinningWoE}
+}
+```
+
+## References
+
+- Siddiqi, N. (2006). *Credit Risk Scorecards: Developing and
+  Implementing Intelligent Credit Scoring*. John Wiley & Sons.
+- Thomas, L. C., Edelman, D. B., & Crook, J. N. (2002). *Credit Scoring
+  and Its Applications*. SIAM.
+- Navas-Palencia, G. (2020). Optimal Binning: Mathematical Programming
+  Formulation. arXiv:2001.08025.
+
+## License
+
+MIT License © 2026 José Evandeilton Lopes
