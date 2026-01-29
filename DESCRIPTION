@@ -1,8 +1,8 @@
 Package: OptimalBinningWoE
 Type: Package
 Title: Optimal Binning and Weight of Evidence Framework for Modeling
-Version: 1.0.3
-Date: 2026-01-20
+Version: 1.0.8
+Date: 2026-01-28
 Authors@R: 
     person(given = "José Evandeilton",
            family = "Lopes",
@@ -34,9 +34,9 @@ SystemRequirements: C++17
 RoxygenNote: 7.3.3
 VignetteBuilder: knitr
 NeedsCompilation: yes
-Packaged: 2026-01-20 13:21:50 UTC; evand
+Packaged: 2026-01-28 16:06:00 UTC; evand
 Author: José Evandeilton Lopes [aut, cre, cph] (ORCID:
     <https://orcid.org/0009-0007-5887-4084>)
 Maintainer: José Evandeilton Lopes <evandeilton@gmail.com>
 Repository: CRAN
-Date/Publication: 2026-01-23 21:10:06 UTC
+Date/Publication: 2026-01-29 08:00:02 UTC

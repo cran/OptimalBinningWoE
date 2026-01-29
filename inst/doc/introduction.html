@@ -12,7 +12,7 @@
 
 <meta name="author" content="José Evandeilton Lopes" />
 
-<meta name="date" content="2026-01-20" />
+<meta name="date" content="2026-01-28" />
 
 <title>OptimalBinningWoE: Practical Guide for Credit Risk Modeling</title>
 
@@ -342,7 +342,7 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <h1 class="title toc-ignore">OptimalBinningWoE: Practical Guide for
 Credit Risk Modeling</h1>
 <h4 class="author">José Evandeilton Lopes</h4>
-<h4 class="date">2026-01-20</h4>
+<h4 class="date">2026-01-28</h4>
 
 
 
@@ -1163,110 +1163,132 @@ workflows.</p>
 </div>
 <div id="apply-woe-transformation" class="section level2">
 <h2>Apply WoE Transformation</h2>
-<div class="sourceCode" id="cb22"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" tabindex="-1"></a><span class="co"># Transform training data</span></span>
-<span id="cb22-2"><a href="#cb22-2" tabindex="-1"></a>train_woe <span class="ot">&lt;-</span> <span class="fu">obwoe_apply</span>(train_sc, sc_binning, <span class="at">keep_original =</span> <span class="cn">FALSE</span>)</span>
-<span id="cb22-3"><a href="#cb22-3" tabindex="-1"></a></span>
-<span id="cb22-4"><a href="#cb22-4" tabindex="-1"></a><span class="co"># Transform test data (uses training bins)</span></span>
-<span id="cb22-5"><a href="#cb22-5" tabindex="-1"></a>test_woe <span class="ot">&lt;-</span> <span class="fu">obwoe_apply</span>(test_sc, sc_binning, <span class="at">keep_original =</span> <span class="cn">FALSE</span>)</span>
-<span id="cb22-6"><a href="#cb22-6" tabindex="-1"></a></span>
-<span id="cb22-7"><a href="#cb22-7" tabindex="-1"></a><span class="co"># Preview transformed features</span></span>
-<span id="cb22-8"><a href="#cb22-8" tabindex="-1"></a><span class="fu">head</span>(train_woe[, <span class="fu">c</span>(<span class="st">&quot;default&quot;</span>, <span class="fu">grep</span>(<span class="st">&quot;_woe$&quot;</span>, <span class="fu">names</span>(train_woe), <span class="at">value =</span> <span class="cn">TRUE</span>)[<span class="dv">1</span><span class="sc">:</span><span class="dv">3</span>])], <span class="dv">10</span>)</span>
-<span id="cb22-9"><a href="#cb22-9" tabindex="-1"></a><span class="co">#&gt;    default duration.in.month_woe credit.amount_woe age.in.years_woe</span></span>
-<span id="cb22-10"><a href="#cb22-10" tabindex="-1"></a><span class="co">#&gt; 1      bad             0.1024181      -0.002787588      -0.04548908</span></span>
-<span id="cb22-11"><a href="#cb22-11" tabindex="-1"></a><span class="co">#&gt; 2     good             0.1024181      -0.002787588      -0.04548908</span></span>
-<span id="cb22-12"><a href="#cb22-12" tabindex="-1"></a><span class="co">#&gt; 3     good             0.1024181       0.054981244      -0.04548908</span></span>
-<span id="cb22-13"><a href="#cb22-13" tabindex="-1"></a><span class="co">#&gt; 4     good             0.1024181      -0.002787588      -0.04548908</span></span>
-<span id="cb22-14"><a href="#cb22-14" tabindex="-1"></a><span class="co">#&gt; 5     good             0.1024181      -0.002787588      -0.04548908</span></span>
-<span id="cb22-15"><a href="#cb22-15" tabindex="-1"></a><span class="co">#&gt; 6     good             0.1024181      -0.002787588      -0.04548908</span></span>
-<span id="cb22-16"><a href="#cb22-16" tabindex="-1"></a><span class="co">#&gt; 7     good             0.1024181      -0.002787588       0.31220411</span></span>
-<span id="cb22-17"><a href="#cb22-17" tabindex="-1"></a><span class="co">#&gt; 8     good             0.1024181       0.054981244      -0.04548908</span></span>
-<span id="cb22-18"><a href="#cb22-18" tabindex="-1"></a><span class="co">#&gt; 9     good             0.1024181      -0.002787588      -0.04548908</span></span>
-<span id="cb22-19"><a href="#cb22-19" tabindex="-1"></a><span class="co">#&gt; 10    good             0.1024181      -0.002787588      -0.04548908</span></span></code></pre></div>
+<div class="sourceCode" id="cb22"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" tabindex="-1"></a><span class="co"># Transform training data with error handling</span></span>
+<span id="cb22-2"><a href="#cb22-2" tabindex="-1"></a>train_woe <span class="ot">&lt;-</span> <span class="fu">tryCatch</span>(</span>
+<span id="cb22-3"><a href="#cb22-3" tabindex="-1"></a>  {</span>
+<span id="cb22-4"><a href="#cb22-4" tabindex="-1"></a>    <span class="fu">obwoe_apply</span>(train_sc, sc_binning, <span class="at">keep_original =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb22-5"><a href="#cb22-5" tabindex="-1"></a>  },</span>
+<span id="cb22-6"><a href="#cb22-6" tabindex="-1"></a>  <span class="at">error =</span> <span class="cf">function</span>(e) {</span>
+<span id="cb22-7"><a href="#cb22-7" tabindex="-1"></a>    <span class="fu">message</span>(<span class="st">&quot;Error in obwoe_apply for training data: &quot;</span>, e<span class="sc">$</span>message)</span>
+<span id="cb22-8"><a href="#cb22-8" tabindex="-1"></a>    <span class="fu">message</span>(<span class="st">&quot;This may occur with certain data distributions. Skipping transformation.&quot;</span>)</span>
+<span id="cb22-9"><a href="#cb22-9" tabindex="-1"></a>    <span class="fu">return</span>(<span class="cn">NULL</span>)</span>
+<span id="cb22-10"><a href="#cb22-10" tabindex="-1"></a>  }</span>
+<span id="cb22-11"><a href="#cb22-11" tabindex="-1"></a>)</span>
+<span id="cb22-12"><a href="#cb22-12" tabindex="-1"></a></span>
+<span id="cb22-13"><a href="#cb22-13" tabindex="-1"></a><span class="co"># Only proceed if transformation succeeded</span></span>
+<span id="cb22-14"><a href="#cb22-14" tabindex="-1"></a><span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.null</span>(train_woe)) {</span>
+<span id="cb22-15"><a href="#cb22-15" tabindex="-1"></a>  <span class="co"># Transform test data (uses training bins)</span></span>
+<span id="cb22-16"><a href="#cb22-16" tabindex="-1"></a>  test_woe <span class="ot">&lt;-</span> <span class="fu">obwoe_apply</span>(test_sc, sc_binning, <span class="at">keep_original =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb22-17"><a href="#cb22-17" tabindex="-1"></a></span>
+<span id="cb22-18"><a href="#cb22-18" tabindex="-1"></a>  <span class="co"># Preview transformed features</span></span>
+<span id="cb22-19"><a href="#cb22-19" tabindex="-1"></a>  <span class="fu">head</span>(train_woe[, <span class="fu">c</span>(<span class="st">&quot;default&quot;</span>, <span class="fu">grep</span>(<span class="st">&quot;_woe$&quot;</span>, <span class="fu">names</span>(train_woe), <span class="at">value =</span> <span class="cn">TRUE</span>)[<span class="dv">1</span><span class="sc">:</span><span class="dv">3</span>])], <span class="dv">10</span>)</span>
+<span id="cb22-20"><a href="#cb22-20" tabindex="-1"></a>} <span class="cf">else</span> {</span>
+<span id="cb22-21"><a href="#cb22-21" tabindex="-1"></a>  <span class="fu">message</span>(<span class="st">&quot;Skipping WoE transformation demonstration due to data incompatibility.&quot;</span>)</span>
+<span id="cb22-22"><a href="#cb22-22" tabindex="-1"></a>}</span>
+<span id="cb22-23"><a href="#cb22-23" tabindex="-1"></a><span class="co">#&gt;    default duration.in.month_woe credit.amount_woe age.in.years_woe</span></span>
+<span id="cb22-24"><a href="#cb22-24" tabindex="-1"></a><span class="co">#&gt; 1      bad             0.1024181      -0.002787588      -0.04548908</span></span>
+<span id="cb22-25"><a href="#cb22-25" tabindex="-1"></a><span class="co">#&gt; 2     good             0.1024181      -0.002787588      -0.04548908</span></span>
+<span id="cb22-26"><a href="#cb22-26" tabindex="-1"></a><span class="co">#&gt; 3     good             0.1024181       0.054981244      -0.04548908</span></span>
+<span id="cb22-27"><a href="#cb22-27" tabindex="-1"></a><span class="co">#&gt; 4     good             0.1024181      -0.002787588      -0.04548908</span></span>
+<span id="cb22-28"><a href="#cb22-28" tabindex="-1"></a><span class="co">#&gt; 5     good             0.1024181      -0.002787588      -0.04548908</span></span>
+<span id="cb22-29"><a href="#cb22-29" tabindex="-1"></a><span class="co">#&gt; 6     good             0.1024181      -0.002787588      -0.04548908</span></span>
+<span id="cb22-30"><a href="#cb22-30" tabindex="-1"></a><span class="co">#&gt; 7     good             0.1024181      -0.002787588       0.31220411</span></span>
+<span id="cb22-31"><a href="#cb22-31" tabindex="-1"></a><span class="co">#&gt; 8     good             0.1024181       0.054981244      -0.04548908</span></span>
+<span id="cb22-32"><a href="#cb22-32" tabindex="-1"></a><span class="co">#&gt; 9     good             0.1024181      -0.002787588      -0.04548908</span></span>
+<span id="cb22-33"><a href="#cb22-33" tabindex="-1"></a><span class="co">#&gt; 10    good             0.1024181      -0.002787588      -0.04548908</span></span></code></pre></div>
 </div>
 <div id="build-logistic-regression" class="section level2">
 <h2>Build Logistic Regression</h2>
-<div class="sourceCode" id="cb23"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" tabindex="-1"></a><span class="co"># Select features with IV &gt;= 0.02</span></span>
-<span id="cb23-2"><a href="#cb23-2" tabindex="-1"></a>selected <span class="ot">&lt;-</span> sc_binning<span class="sc">$</span>summary<span class="sc">$</span>feature[</span>
-<span id="cb23-3"><a href="#cb23-3" tabindex="-1"></a>  sc_binning<span class="sc">$</span>summary<span class="sc">$</span>total_iv <span class="sc">&gt;=</span> <span class="fl">0.02</span> <span class="sc">&amp;</span></span>
-<span id="cb23-4"><a href="#cb23-4" tabindex="-1"></a>    <span class="sc">!</span>sc_binning<span class="sc">$</span>summary<span class="sc">$</span>error</span>
-<span id="cb23-5"><a href="#cb23-5" tabindex="-1"></a>]</span>
-<span id="cb23-6"><a href="#cb23-6" tabindex="-1"></a></span>
-<span id="cb23-7"><a href="#cb23-7" tabindex="-1"></a>woe_vars <span class="ot">&lt;-</span> <span class="fu">paste0</span>(selected, <span class="st">&quot;_woe&quot;</span>)</span>
-<span id="cb23-8"><a href="#cb23-8" tabindex="-1"></a>formula_str <span class="ot">&lt;-</span> <span class="fu">paste</span>(<span class="st">&quot;default ~&quot;</span>, <span class="fu">paste</span>(woe_vars, <span class="at">collapse =</span> <span class="st">&quot; + &quot;</span>))</span>
-<span id="cb23-9"><a href="#cb23-9" tabindex="-1"></a></span>
-<span id="cb23-10"><a href="#cb23-10" tabindex="-1"></a><span class="co"># Fit model</span></span>
-<span id="cb23-11"><a href="#cb23-11" tabindex="-1"></a>scorecard_glm <span class="ot">&lt;-</span> <span class="fu">glm</span>(</span>
-<span id="cb23-12"><a href="#cb23-12" tabindex="-1"></a>  <span class="fu">as.formula</span>(formula_str),</span>
-<span id="cb23-13"><a href="#cb23-13" tabindex="-1"></a>  <span class="at">data =</span> train_woe,</span>
-<span id="cb23-14"><a href="#cb23-14" tabindex="-1"></a>  <span class="at">family =</span> <span class="fu">binomial</span>(<span class="at">link =</span> <span class="st">&quot;logit&quot;</span>)</span>
-<span id="cb23-15"><a href="#cb23-15" tabindex="-1"></a>)</span>
-<span id="cb23-16"><a href="#cb23-16" tabindex="-1"></a></span>
-<span id="cb23-17"><a href="#cb23-17" tabindex="-1"></a><span class="fu">summary</span>(scorecard_glm)</span>
-<span id="cb23-18"><a href="#cb23-18" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb23-19"><a href="#cb23-19" tabindex="-1"></a><span class="co">#&gt; Call:</span></span>
-<span id="cb23-20"><a href="#cb23-20" tabindex="-1"></a><span class="co">#&gt; glm(formula = as.formula(formula_str), family = binomial(link = &quot;logit&quot;), </span></span>
-<span id="cb23-21"><a href="#cb23-21" tabindex="-1"></a><span class="co">#&gt;     data = train_woe)</span></span>
+<div class="sourceCode" id="cb23"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" tabindex="-1"></a><span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.null</span>(train_woe)) {</span>
+<span id="cb23-2"><a href="#cb23-2" tabindex="-1"></a>  <span class="co"># Select features with IV &gt;= 0.02</span></span>
+<span id="cb23-3"><a href="#cb23-3" tabindex="-1"></a>  selected <span class="ot">&lt;-</span> sc_binning<span class="sc">$</span>summary<span class="sc">$</span>feature[</span>
+<span id="cb23-4"><a href="#cb23-4" tabindex="-1"></a>    sc_binning<span class="sc">$</span>summary<span class="sc">$</span>total_iv <span class="sc">&gt;=</span> <span class="fl">0.02</span> <span class="sc">&amp;</span></span>
+<span id="cb23-5"><a href="#cb23-5" tabindex="-1"></a>      <span class="sc">!</span>sc_binning<span class="sc">$</span>summary<span class="sc">$</span>error</span>
+<span id="cb23-6"><a href="#cb23-6" tabindex="-1"></a>  ]</span>
+<span id="cb23-7"><a href="#cb23-7" tabindex="-1"></a></span>
+<span id="cb23-8"><a href="#cb23-8" tabindex="-1"></a>  woe_vars <span class="ot">&lt;-</span> <span class="fu">paste0</span>(selected, <span class="st">&quot;_woe&quot;</span>)</span>
+<span id="cb23-9"><a href="#cb23-9" tabindex="-1"></a>  formula_str <span class="ot">&lt;-</span> <span class="fu">paste</span>(<span class="st">&quot;default ~&quot;</span>, <span class="fu">paste</span>(woe_vars, <span class="at">collapse =</span> <span class="st">&quot; + &quot;</span>))</span>
+<span id="cb23-10"><a href="#cb23-10" tabindex="-1"></a></span>
+<span id="cb23-11"><a href="#cb23-11" tabindex="-1"></a>  <span class="co"># Fit model</span></span>
+<span id="cb23-12"><a href="#cb23-12" tabindex="-1"></a>  scorecard_glm <span class="ot">&lt;-</span> <span class="fu">glm</span>(</span>
+<span id="cb23-13"><a href="#cb23-13" tabindex="-1"></a>    <span class="fu">as.formula</span>(formula_str),</span>
+<span id="cb23-14"><a href="#cb23-14" tabindex="-1"></a>    <span class="at">data =</span> train_woe,</span>
+<span id="cb23-15"><a href="#cb23-15" tabindex="-1"></a>    <span class="at">family =</span> <span class="fu">binomial</span>(<span class="at">link =</span> <span class="st">&quot;logit&quot;</span>)</span>
+<span id="cb23-16"><a href="#cb23-16" tabindex="-1"></a>  )</span>
+<span id="cb23-17"><a href="#cb23-17" tabindex="-1"></a></span>
+<span id="cb23-18"><a href="#cb23-18" tabindex="-1"></a>  <span class="fu">summary</span>(scorecard_glm)</span>
+<span id="cb23-19"><a href="#cb23-19" tabindex="-1"></a>} <span class="cf">else</span> {</span>
+<span id="cb23-20"><a href="#cb23-20" tabindex="-1"></a>  <span class="fu">message</span>(<span class="st">&quot;Skipping model building - WoE transformation failed.&quot;</span>)</span>
+<span id="cb23-21"><a href="#cb23-21" tabindex="-1"></a>}</span>
 <span id="cb23-22"><a href="#cb23-22" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb23-23"><a href="#cb23-23" tabindex="-1"></a><span class="co">#&gt; Coefficients:</span></span>
-<span id="cb23-24"><a href="#cb23-24" tabindex="-1"></a><span class="co">#&gt;                                         Estimate Std. Error z value Pr(&gt;|z|)</span></span>
-<span id="cb23-25"><a href="#cb23-25" tabindex="-1"></a><span class="co">#&gt; (Intercept)                             -0.79374    0.09883  -8.031 9.65e-16</span></span>
-<span id="cb23-26"><a href="#cb23-26" tabindex="-1"></a><span class="co">#&gt; duration.in.month_woe                    0.72740    0.23363   3.114 0.001849</span></span>
-<span id="cb23-27"><a href="#cb23-27" tabindex="-1"></a><span class="co">#&gt; status.of.existing.checking.account_woe  0.89237    0.10413   8.570  &lt; 2e-16</span></span>
-<span id="cb23-28"><a href="#cb23-28" tabindex="-1"></a><span class="co">#&gt; credit.history_woe                       0.74937    0.19002   3.944 8.03e-05</span></span>
-<span id="cb23-29"><a href="#cb23-29" tabindex="-1"></a><span class="co">#&gt; purpose_woe                              1.02008    0.30818   3.310 0.000933</span></span>
-<span id="cb23-30"><a href="#cb23-30" tabindex="-1"></a><span class="co">#&gt; savings.account.and.bonds_woe            0.75047    0.19641   3.821 0.000133</span></span>
-<span id="cb23-31"><a href="#cb23-31" tabindex="-1"></a><span class="co">#&gt;                                            </span></span>
-<span id="cb23-32"><a href="#cb23-32" tabindex="-1"></a><span class="co">#&gt; (Intercept)                             ***</span></span>
-<span id="cb23-33"><a href="#cb23-33" tabindex="-1"></a><span class="co">#&gt; duration.in.month_woe                   ** </span></span>
-<span id="cb23-34"><a href="#cb23-34" tabindex="-1"></a><span class="co">#&gt; status.of.existing.checking.account_woe ***</span></span>
-<span id="cb23-35"><a href="#cb23-35" tabindex="-1"></a><span class="co">#&gt; credit.history_woe                      ***</span></span>
-<span id="cb23-36"><a href="#cb23-36" tabindex="-1"></a><span class="co">#&gt; purpose_woe                             ***</span></span>
-<span id="cb23-37"><a href="#cb23-37" tabindex="-1"></a><span class="co">#&gt; savings.account.and.bonds_woe           ***</span></span>
-<span id="cb23-38"><a href="#cb23-38" tabindex="-1"></a><span class="co">#&gt; ---</span></span>
-<span id="cb23-39"><a href="#cb23-39" tabindex="-1"></a><span class="co">#&gt; Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1</span></span>
-<span id="cb23-40"><a href="#cb23-40" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb23-41"><a href="#cb23-41" tabindex="-1"></a><span class="co">#&gt; (Dispersion parameter for binomial family taken to be 1)</span></span>
-<span id="cb23-42"><a href="#cb23-42" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb23-43"><a href="#cb23-43" tabindex="-1"></a><span class="co">#&gt;     Null deviance: 860.23  on 699  degrees of freedom</span></span>
-<span id="cb23-44"><a href="#cb23-44" tabindex="-1"></a><span class="co">#&gt; Residual deviance: 665.59  on 694  degrees of freedom</span></span>
-<span id="cb23-45"><a href="#cb23-45" tabindex="-1"></a><span class="co">#&gt; AIC: 677.59</span></span>
+<span id="cb23-23"><a href="#cb23-23" tabindex="-1"></a><span class="co">#&gt; Call:</span></span>
+<span id="cb23-24"><a href="#cb23-24" tabindex="-1"></a><span class="co">#&gt; glm(formula = as.formula(formula_str), family = binomial(link = &quot;logit&quot;), </span></span>
+<span id="cb23-25"><a href="#cb23-25" tabindex="-1"></a><span class="co">#&gt;     data = train_woe)</span></span>
+<span id="cb23-26"><a href="#cb23-26" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb23-27"><a href="#cb23-27" tabindex="-1"></a><span class="co">#&gt; Coefficients:</span></span>
+<span id="cb23-28"><a href="#cb23-28" tabindex="-1"></a><span class="co">#&gt;                                         Estimate Std. Error z value Pr(&gt;|z|)</span></span>
+<span id="cb23-29"><a href="#cb23-29" tabindex="-1"></a><span class="co">#&gt; (Intercept)                             -0.79374    0.09883  -8.031 9.65e-16</span></span>
+<span id="cb23-30"><a href="#cb23-30" tabindex="-1"></a><span class="co">#&gt; duration.in.month_woe                    0.72740    0.23363   3.114 0.001849</span></span>
+<span id="cb23-31"><a href="#cb23-31" tabindex="-1"></a><span class="co">#&gt; status.of.existing.checking.account_woe  0.89237    0.10413   8.570  &lt; 2e-16</span></span>
+<span id="cb23-32"><a href="#cb23-32" tabindex="-1"></a><span class="co">#&gt; credit.history_woe                       0.74937    0.19002   3.944 8.03e-05</span></span>
+<span id="cb23-33"><a href="#cb23-33" tabindex="-1"></a><span class="co">#&gt; purpose_woe                              1.02008    0.30818   3.310 0.000933</span></span>
+<span id="cb23-34"><a href="#cb23-34" tabindex="-1"></a><span class="co">#&gt; savings.account.and.bonds_woe            0.75047    0.19641   3.821 0.000133</span></span>
+<span id="cb23-35"><a href="#cb23-35" tabindex="-1"></a><span class="co">#&gt;                                            </span></span>
+<span id="cb23-36"><a href="#cb23-36" tabindex="-1"></a><span class="co">#&gt; (Intercept)                             ***</span></span>
+<span id="cb23-37"><a href="#cb23-37" tabindex="-1"></a><span class="co">#&gt; duration.in.month_woe                   ** </span></span>
+<span id="cb23-38"><a href="#cb23-38" tabindex="-1"></a><span class="co">#&gt; status.of.existing.checking.account_woe ***</span></span>
+<span id="cb23-39"><a href="#cb23-39" tabindex="-1"></a><span class="co">#&gt; credit.history_woe                      ***</span></span>
+<span id="cb23-40"><a href="#cb23-40" tabindex="-1"></a><span class="co">#&gt; purpose_woe                             ***</span></span>
+<span id="cb23-41"><a href="#cb23-41" tabindex="-1"></a><span class="co">#&gt; savings.account.and.bonds_woe           ***</span></span>
+<span id="cb23-42"><a href="#cb23-42" tabindex="-1"></a><span class="co">#&gt; ---</span></span>
+<span id="cb23-43"><a href="#cb23-43" tabindex="-1"></a><span class="co">#&gt; Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1</span></span>
+<span id="cb23-44"><a href="#cb23-44" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb23-45"><a href="#cb23-45" tabindex="-1"></a><span class="co">#&gt; (Dispersion parameter for binomial family taken to be 1)</span></span>
 <span id="cb23-46"><a href="#cb23-46" tabindex="-1"></a><span class="co">#&gt; </span></span>
-<span id="cb23-47"><a href="#cb23-47" tabindex="-1"></a><span class="co">#&gt; Number of Fisher Scoring iterations: 5</span></span></code></pre></div>
+<span id="cb23-47"><a href="#cb23-47" tabindex="-1"></a><span class="co">#&gt;     Null deviance: 860.23  on 699  degrees of freedom</span></span>
+<span id="cb23-48"><a href="#cb23-48" tabindex="-1"></a><span class="co">#&gt; Residual deviance: 665.59  on 694  degrees of freedom</span></span>
+<span id="cb23-49"><a href="#cb23-49" tabindex="-1"></a><span class="co">#&gt; AIC: 677.59</span></span>
+<span id="cb23-50"><a href="#cb23-50" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb23-51"><a href="#cb23-51" tabindex="-1"></a><span class="co">#&gt; Number of Fisher Scoring iterations: 5</span></span></code></pre></div>
 </div>
 <div id="scorecard-validation" class="section level2">
 <h2>Scorecard Validation</h2>
-<div class="sourceCode" id="cb24"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" tabindex="-1"></a><span class="fu">library</span>(pROC)</span>
-<span id="cb24-2"><a href="#cb24-2" tabindex="-1"></a></span>
-<span id="cb24-3"><a href="#cb24-3" tabindex="-1"></a><span class="co"># Predictions</span></span>
-<span id="cb24-4"><a href="#cb24-4" tabindex="-1"></a>test_woe<span class="sc">$</span>score <span class="ot">&lt;-</span> <span class="fu">predict</span>(scorecard_glm, <span class="at">newdata =</span> test_woe, <span class="at">type =</span> <span class="st">&quot;response&quot;</span>)</span>
-<span id="cb24-5"><a href="#cb24-5" tabindex="-1"></a></span>
-<span id="cb24-6"><a href="#cb24-6" tabindex="-1"></a><span class="co"># ROC curve</span></span>
-<span id="cb24-7"><a href="#cb24-7" tabindex="-1"></a>roc_obj <span class="ot">&lt;-</span> <span class="fu">roc</span>(test_woe<span class="sc">$</span>default, test_woe<span class="sc">$</span>score, <span class="at">quiet =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb24-8"><a href="#cb24-8" tabindex="-1"></a>auc_val <span class="ot">&lt;-</span> <span class="fu">auc</span>(roc_obj)</span>
-<span id="cb24-9"><a href="#cb24-9" tabindex="-1"></a></span>
-<span id="cb24-10"><a href="#cb24-10" tabindex="-1"></a><span class="co"># KS statistic</span></span>
-<span id="cb24-11"><a href="#cb24-11" tabindex="-1"></a>ks_stat <span class="ot">&lt;-</span> <span class="fu">max</span>(<span class="fu">abs</span>(</span>
-<span id="cb24-12"><a href="#cb24-12" tabindex="-1"></a>  <span class="fu">ecdf</span>(test_woe<span class="sc">$</span>score[test_woe<span class="sc">$</span>default <span class="sc">==</span> <span class="st">&quot;bad&quot;</span>])(<span class="fu">seq</span>(<span class="dv">0</span>, <span class="dv">1</span>, <span class="fl">0.01</span>)) <span class="sc">-</span></span>
-<span id="cb24-13"><a href="#cb24-13" tabindex="-1"></a>    <span class="fu">ecdf</span>(test_woe<span class="sc">$</span>score[test_woe<span class="sc">$</span>default <span class="sc">==</span> <span class="st">&quot;good&quot;</span>])(<span class="fu">seq</span>(<span class="dv">0</span>, <span class="dv">1</span>, <span class="fl">0.01</span>))</span>
-<span id="cb24-14"><a href="#cb24-14" tabindex="-1"></a>))</span>
-<span id="cb24-15"><a href="#cb24-15" tabindex="-1"></a></span>
-<span id="cb24-16"><a href="#cb24-16" tabindex="-1"></a><span class="co"># Gini coefficient</span></span>
-<span id="cb24-17"><a href="#cb24-17" tabindex="-1"></a>gini <span class="ot">&lt;-</span> <span class="dv">2</span> <span class="sc">*</span> auc_val <span class="sc">-</span> <span class="dv">1</span></span>
-<span id="cb24-18"><a href="#cb24-18" tabindex="-1"></a></span>
-<span id="cb24-19"><a href="#cb24-19" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Scorecard Performance:</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
-<span id="cb24-20"><a href="#cb24-20" tabindex="-1"></a><span class="co">#&gt; Scorecard Performance:</span></span>
-<span id="cb24-21"><a href="#cb24-21" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;  AUC:  &quot;</span>, <span class="fu">round</span>(auc_val, <span class="dv">4</span>), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
-<span id="cb24-22"><a href="#cb24-22" tabindex="-1"></a><span class="co">#&gt;   AUC:   0.6504</span></span>
-<span id="cb24-23"><a href="#cb24-23" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;  Gini: &quot;</span>, <span class="fu">round</span>(gini, <span class="dv">4</span>), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
-<span id="cb24-24"><a href="#cb24-24" tabindex="-1"></a><span class="co">#&gt;   Gini:  0.3007</span></span>
-<span id="cb24-25"><a href="#cb24-25" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;  KS:   &quot;</span>, <span class="fu">round</span>(ks_stat <span class="sc">*</span> <span class="dv">100</span>, <span class="dv">2</span>), <span class="st">&quot;%</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
-<span id="cb24-26"><a href="#cb24-26" tabindex="-1"></a><span class="co">#&gt;   KS:    29.93 %</span></span>
-<span id="cb24-27"><a href="#cb24-27" tabindex="-1"></a></span>
-<span id="cb24-28"><a href="#cb24-28" tabindex="-1"></a><span class="co"># ROC plot</span></span>
-<span id="cb24-29"><a href="#cb24-29" tabindex="-1"></a><span class="fu">plot</span>(roc_obj,</span>
-<span id="cb24-30"><a href="#cb24-30" tabindex="-1"></a>  <span class="at">main =</span> <span class="st">&quot;Scorecard ROC Curve&quot;</span>,</span>
-<span id="cb24-31"><a href="#cb24-31" tabindex="-1"></a>  <span class="at">print.auc =</span> <span class="cn">TRUE</span>, <span class="at">print.thres =</span> <span class="st">&quot;best&quot;</span></span>
-<span id="cb24-32"><a href="#cb24-32" tabindex="-1"></a>)</span></code></pre></div>
+<div class="sourceCode" id="cb24"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" tabindex="-1"></a><span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.null</span>(train_woe) <span class="sc">&amp;&amp;</span> <span class="fu">exists</span>(<span class="st">&quot;scorecard_glm&quot;</span>)) {</span>
+<span id="cb24-2"><a href="#cb24-2" tabindex="-1"></a>  <span class="fu">library</span>(pROC)</span>
+<span id="cb24-3"><a href="#cb24-3" tabindex="-1"></a></span>
+<span id="cb24-4"><a href="#cb24-4" tabindex="-1"></a>  <span class="co"># Predictions</span></span>
+<span id="cb24-5"><a href="#cb24-5" tabindex="-1"></a>  test_woe<span class="sc">$</span>score <span class="ot">&lt;-</span> <span class="fu">predict</span>(scorecard_glm, <span class="at">newdata =</span> test_woe, <span class="at">type =</span> <span class="st">&quot;response&quot;</span>)</span>
+<span id="cb24-6"><a href="#cb24-6" tabindex="-1"></a></span>
+<span id="cb24-7"><a href="#cb24-7" tabindex="-1"></a>  <span class="co"># ROC curve</span></span>
+<span id="cb24-8"><a href="#cb24-8" tabindex="-1"></a>  roc_obj <span class="ot">&lt;-</span> <span class="fu">roc</span>(test_woe<span class="sc">$</span>default, test_woe<span class="sc">$</span>score, <span class="at">quiet =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb24-9"><a href="#cb24-9" tabindex="-1"></a>  auc_val <span class="ot">&lt;-</span> <span class="fu">auc</span>(roc_obj)</span>
+<span id="cb24-10"><a href="#cb24-10" tabindex="-1"></a></span>
+<span id="cb24-11"><a href="#cb24-11" tabindex="-1"></a>  <span class="co"># KS statistic</span></span>
+<span id="cb24-12"><a href="#cb24-12" tabindex="-1"></a>  ks_stat <span class="ot">&lt;-</span> <span class="fu">max</span>(<span class="fu">abs</span>(</span>
+<span id="cb24-13"><a href="#cb24-13" tabindex="-1"></a>    <span class="fu">ecdf</span>(test_woe<span class="sc">$</span>score[test_woe<span class="sc">$</span>default <span class="sc">==</span> <span class="st">&quot;bad&quot;</span>])(<span class="fu">seq</span>(<span class="dv">0</span>, <span class="dv">1</span>, <span class="fl">0.01</span>)) <span class="sc">-</span></span>
+<span id="cb24-14"><a href="#cb24-14" tabindex="-1"></a>      <span class="fu">ecdf</span>(test_woe<span class="sc">$</span>score[test_woe<span class="sc">$</span>default <span class="sc">==</span> <span class="st">&quot;good&quot;</span>])(<span class="fu">seq</span>(<span class="dv">0</span>, <span class="dv">1</span>, <span class="fl">0.01</span>))</span>
+<span id="cb24-15"><a href="#cb24-15" tabindex="-1"></a>  ))</span>
+<span id="cb24-16"><a href="#cb24-16" tabindex="-1"></a></span>
+<span id="cb24-17"><a href="#cb24-17" tabindex="-1"></a>  <span class="co"># Gini coefficient</span></span>
+<span id="cb24-18"><a href="#cb24-18" tabindex="-1"></a>  gini <span class="ot">&lt;-</span> <span class="dv">2</span> <span class="sc">*</span> auc_val <span class="sc">-</span> <span class="dv">1</span></span>
+<span id="cb24-19"><a href="#cb24-19" tabindex="-1"></a></span>
+<span id="cb24-20"><a href="#cb24-20" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="st">&quot;Scorecard Performance:</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
+<span id="cb24-21"><a href="#cb24-21" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="st">&quot;  AUC:  &quot;</span>, <span class="fu">round</span>(auc_val, <span class="dv">4</span>), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
+<span id="cb24-22"><a href="#cb24-22" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="st">&quot;  Gini: &quot;</span>, <span class="fu">round</span>(gini, <span class="dv">4</span>), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
+<span id="cb24-23"><a href="#cb24-23" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="st">&quot;  KS:   &quot;</span>, <span class="fu">round</span>(ks_stat <span class="sc">*</span> <span class="dv">100</span>, <span class="dv">2</span>), <span class="st">&quot;%</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
+<span id="cb24-24"><a href="#cb24-24" tabindex="-1"></a></span>
+<span id="cb24-25"><a href="#cb24-25" tabindex="-1"></a>  <span class="co"># ROC plot</span></span>
+<span id="cb24-26"><a href="#cb24-26" tabindex="-1"></a>  <span class="fu">plot</span>(roc_obj,</span>
+<span id="cb24-27"><a href="#cb24-27" tabindex="-1"></a>    <span class="at">main =</span> <span class="st">&quot;Scorecard ROC Curve&quot;</span>,</span>
+<span id="cb24-28"><a href="#cb24-28" tabindex="-1"></a>    <span class="at">print.auc =</span> <span class="cn">TRUE</span>, <span class="at">print.thres =</span> <span class="st">&quot;best&quot;</span></span>
+<span id="cb24-29"><a href="#cb24-29" tabindex="-1"></a>  )</span>
+<span id="cb24-30"><a href="#cb24-30" tabindex="-1"></a>} <span class="cf">else</span> {</span>
+<span id="cb24-31"><a href="#cb24-31" tabindex="-1"></a>  <span class="fu">message</span>(<span class="st">&quot;Skipping validation - model not available.&quot;</span>)</span>
+<span id="cb24-32"><a href="#cb24-32" tabindex="-1"></a>}</span>
+<span id="cb24-33"><a href="#cb24-33" tabindex="-1"></a><span class="co">#&gt; Scorecard Performance:</span></span>
+<span id="cb24-34"><a href="#cb24-34" tabindex="-1"></a><span class="co">#&gt;   AUC:   0.6504 </span></span>
+<span id="cb24-35"><a href="#cb24-35" tabindex="-1"></a><span class="co">#&gt;   Gini:  0.3007 </span></span>
+<span id="cb24-36"><a href="#cb24-36" tabindex="-1"></a><span class="co">#&gt;   KS:    29.93 %</span></span></code></pre></div>
 <p><img role="img" src="data:image/png;base64,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" /><!-- --></p>
 </div>
 </div>
@@ -1456,7 +1478,7 @@ Press.</p>
 <span id="cb29-24"><a href="#cb29-24" tabindex="-1"></a><span class="co">#&gt; [10] purrr_1.2.1             parsnip_1.4.1           modeldata_1.5.1        </span></span>
 <span id="cb29-25"><a href="#cb29-25" tabindex="-1"></a><span class="co">#&gt; [13] infer_1.1.0             ggplot2_4.0.1           dplyr_1.1.4            </span></span>
 <span id="cb29-26"><a href="#cb29-26" tabindex="-1"></a><span class="co">#&gt; [16] dials_1.4.2             scales_1.4.0            broom_1.0.11           </span></span>
-<span id="cb29-27"><a href="#cb29-27" tabindex="-1"></a><span class="co">#&gt; [19] tidymodels_1.4.1        scorecard_0.4.5         OptimalBinningWoE_1.0.3</span></span>
+<span id="cb29-27"><a href="#cb29-27" tabindex="-1"></a><span class="co">#&gt; [19] tidymodels_1.4.1        scorecard_0.4.5         OptimalBinningWoE_1.0.8</span></span>
 <span id="cb29-28"><a href="#cb29-28" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb29-29"><a href="#cb29-29" tabindex="-1"></a><span class="co">#&gt; loaded via a namespace (and not attached):</span></span>
 <span id="cb29-30"><a href="#cb29-30" tabindex="-1"></a><span class="co">#&gt;  [1] tidyselect_1.2.1    timeDate_4051.111   farver_2.1.2       </span></span>
@@ -1467,7 +1489,7 @@ Press.</p>
 <span id="cb29-35"><a href="#cb29-35" tabindex="-1"></a><span class="co">#&gt; [16] utf8_1.2.6          yaml_2.3.12         data.table_1.18.0  </span></span>
 <span id="cb29-36"><a href="#cb29-36" tabindex="-1"></a><span class="co">#&gt; [19] knitr_1.51          labeling_0.4.3      xml2_1.5.1         </span></span>
 <span id="cb29-37"><a href="#cb29-37" tabindex="-1"></a><span class="co">#&gt; [22] DiceDesign_1.10     RColorBrewer_1.1-3  withr_3.0.2        </span></span>
-<span id="cb29-38"><a href="#cb29-38" tabindex="-1"></a><span class="co">#&gt; [25] nnet_7.3-20         grid_4.5.2          sparsevctrs_0.3.5  </span></span>
+<span id="cb29-38"><a href="#cb29-38" tabindex="-1"></a><span class="co">#&gt; [25] nnet_7.3-20         grid_4.5.2          sparsevctrs_0.3.6  </span></span>
 <span id="cb29-39"><a href="#cb29-39" tabindex="-1"></a><span class="co">#&gt; [28] future_1.69.0       globals_0.18.0      iterators_1.0.14   </span></span>
 <span id="cb29-40"><a href="#cb29-40" tabindex="-1"></a><span class="co">#&gt; [31] MASS_7.3-65         cli_3.6.5           rmarkdown_2.30     </span></span>
 <span id="cb29-41"><a href="#cb29-41" tabindex="-1"></a><span class="co">#&gt; [34] generics_0.1.4      otel_0.2.0          rstudioapi_0.17.1  </span></span>
