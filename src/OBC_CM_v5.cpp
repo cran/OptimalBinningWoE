@@ -14,11 +14,11 @@
 #include <iomanip>
 #include <chrono>
 
-using namespace Rcpp;
 
 // Include shared headers
 #include "common/optimal_binning_common.h"
 #include "common/bin_structures.h"
+#include "common/chi_square_utils.h"
 
 using namespace Rcpp;
 using namespace OptimalBinning;
@@ -31,10 +31,15 @@ using namespace OptimalBinning;
 /**
  * @brief Safe logarithm with underflow protection
  * @param x Input value
- * @param epsilon Minimum value before log (default: 1e-12)
+ * @param epsilon Minimum value before log (default: EPSILON, 1e-10)
  * @return log(max(x, epsilon))
+ *
+ * [D5] Was hardcoded to 1e-12, diverging from OptimalBinning::EPSILON
+ * (1e-10, common/optimal_binning_common.h) that most other algorithms'
+ * local safe_log() copies already use. Unified to EPSILON so this
+ * algorithm's WoE/IV underflow floor matches the rest of the package.
  */
-inline double safe_log(double x, double epsilon = 1e-12) {
+inline double safe_log(double x, double epsilon = EPSILON) {
   return std::log(std::max(x, epsilon));
 }
 
@@ -72,85 +77,6 @@ inline double clamp(double value, double min_val, double max_val) {
  */
 // Local CategoricalBin definition removed
 
-
-// =============================================================================
-// CHI-SQUARE CACHE CLASS (ENHANCED)
-// =============================================================================
-
-/**
- * @brief Efficient cache for chi-square calculations with validation
- */
-class ChiSquareCache {
-private:
-  std::vector<double> cache;
-  size_t num_bins;
-  static constexpr double INVALID_VALUE = -1.0;
-  
-public:
-  ChiSquareCache() : num_bins(0) {}
-  
-  /**
-   * @brief Resize cache for n bins (stores n-1 adjacent pairs)
-   * @param n Number of bins
-   */
-  void resize(size_t n) {
-    num_bins = n;
-    size_t cache_size = (n > 1) ? (n - 1) : 0;
-    cache.assign(cache_size, INVALID_VALUE);
-  }
-  
-  /**
-   * @brief Get cached chi-square value for adjacent bins i and i+1
-   * @param i First bin index
-   * @return Chi-square value or INVALID_VALUE if not cached
-   */
-  double get(size_t i) const {
-    if (i >= num_bins - 1 || i >= cache.size()) {
-      return INVALID_VALUE;
-    }
-    return cache[i];
-  }
-  
-  /**
-   * @brief Store chi-square value for adjacent bins i and i+1
-   * @param i First bin index
-   * @param value Chi-square value (must be >= 0)
-   */
-  void set(size_t i, double value) {
-    if (i < cache.size() && value >= 0) {
-      cache[i] = value;
-    }
-  }
-  
-  /**
-   * @brief Invalidate cache entries after merge at index
-   * @param merge_index Index where merge occurred
-   */
-  void invalidate_after_merge(size_t merge_index) {
-    // Invalidate the pair before the merge point
-    if (merge_index > 0 && merge_index - 1 < cache.size()) {
-      cache[merge_index - 1] = INVALID_VALUE;
-    }
-    // Invalidate the pair at the merge point
-    if (merge_index < cache.size()) {
-      cache[merge_index] = INVALID_VALUE;
-    }
-  }
-  
-  /**
-   * @brief Completely invalidate the cache
-   */
-  void clear() {
-    std::fill(cache.begin(), cache.end(), INVALID_VALUE);
-  }
-  
-  /**
-   * @brief Check if value is valid
-   */
-  static bool is_valid(double value) {
-    return value >= 0;
-  }
-};
 
 // =============================================================================
 // OPTIMAL BINNING CATEGORICAL CLASS (ENHANCED)
@@ -661,8 +587,15 @@ private:
     }
     
     if (iterations_run >= max_iterations) {
-      warnings.push_back("ChiMerge reached max_iterations (" + 
+      warnings.push_back("ChiMerge reached max_iterations (" +
         std::to_string(max_iterations) + ")");
+    } else {
+      // The loop above can also end because no further merge is possible --
+      // typically because min_bins is already reached, or because the bin-count
+      // target was met by the first loop and can_merge_further() was false from
+      // the start. Those are valid stopping states, not failures; only
+      // exhausting max_iterations leaves converged == false.
+      converged = converged || (bins.size() <= static_cast<size_t>(max_bins));
     }
   }
   
@@ -1053,6 +986,9 @@ private:
       Rcpp::Named("count_neg") = counts_neg,
       Rcpp::Named("converged") = converged,
       Rcpp::Named("iterations") = iterations_run,
+      // Exposed at top level like every other categorical algorithm. It stays
+      // in `metadata` as well, so callers reading it from there keep working.
+      Rcpp::Named("total_iv") = total_iv,
       Rcpp::Named("algorithm") = use_chi2_algorithm ? "Chi2" : "ChiMerge",
       Rcpp::Named("warnings") = warnings,
       Rcpp::Named("metadata") = Rcpp::List::create(

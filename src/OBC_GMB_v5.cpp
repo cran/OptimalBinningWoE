@@ -12,7 +12,6 @@
 #include <unordered_set>
 #include <memory>
 
-using namespace Rcpp;
 
 // Include shared headers
 #include "common/optimal_binning_common.h"
@@ -265,19 +264,44 @@ private:
     
     bins = std::move(merged_bins);
     
-    // Limit number of pre-bins if necessary
+    // Limit number of pre-bins if necessary.
+    //
+    // The excess bins are folded into the smallest of the retained ones. They
+    // used to be dropped instead: the vector was simply resized, which removed
+    // those categories' observations from the binning altogether. The loss was
+    // silent -- no warning, no error flag, and `converged` still true -- and it
+    // is reachable whenever more than max_n_prebins bins survive the rare-bin
+    // merge above, which a bin_cutoff below 1/max_n_prebins allows.
+    //
+    // Folding rather than dropping keeps every observation represented, so the
+    // reported counts, WoE and IV describe the whole sample as they claim to.
+    // Which categories are kept as separate identities is unchanged: still the
+    // max_n_prebins largest.
     if (static_cast<int>(bins.size()) > max_n_prebins) {
+      // validateInputs() enforces min_bins >= 2 and max_n_prebins >= min_bins,
+      // so keep is at least 2 and the absorber index below is always in range.
+      const int keep = max_n_prebins;
+      const int n_bins = static_cast<int>(bins.size());
+
       // Sort by bin size before limiting
       std::sort(bins.begin(), bins.end(), [](const CategoricalBin& a, const CategoricalBin& b) {
         return a.count > b.count;  // Descending order
       });
-      bins.resize(max_n_prebins);
-      
+
+      // Fold the remainder into the smallest retained bin. The sort above is
+      // descending by count, so that is the last of the retained block.
+      CategoricalBin& absorber = bins[keep - 1];
+      for (int i = keep; i < n_bins; ++i) {
+        absorber.merge_with(bins[i]);
+      }
+
+      bins.resize(keep);
+
       // Resort by positive rate
       for (const auto& bin : bins) {
         (void)bin; // Suppress unused variable warning - event_rate() calculated dynamically
       }
-      
+
       std::sort(bins.begin(), bins.end(), [](const CategoricalBin& a, const CategoricalBin& b) {
         return a.event_rate() < b.event_rate();
       });
@@ -411,6 +435,64 @@ private:
         break;
       }
     }
+
+    // Reaching the bin-count target (or min_bins) is a valid stopping state,
+    // just like meeting the IV tolerance above. Only exhausting max_iterations
+    // leaves converged == false.
+    converged = converged || (static_cast<int>(bins.size()) <= max_bins);
+  }
+
+  // Enforce max_bins as a hard post-condition.
+  //
+  // greedyMerge() can stop on its IV-change tolerance before the bin count
+  // reaches max_bins, leaving more bins than the caller asked for (11 against
+  // max_bins = 5 on a 12-category feature). max_bins is a documented
+  // user-facing parameter, so once the greedy rule has had its say we keep
+  // merging by the algorithm's own criterion -- the adjacent pair whose merge
+  // leaves the highest total IV, i.e. the least-IV-loss merge -- until the cap
+  // is met.
+  //
+  // This does not conflict with GMB's monotonicity guarantee: ensureMonotonicity()
+  // runs after this, and merging adjacent bins in an event-rate-sorted list can
+  // only remove monotonicity violations, never introduce them.
+  //
+  // min_bins still wins: we never merge below it.
+  void enforceMaxBins() {
+    while (static_cast<int>(bins.size()) > max_bins &&
+           static_cast<int>(bins.size()) > min_bins &&
+           bins.size() > 1) {
+      double best_score = NEG_INFINITY;
+      size_t best_index = 0;
+
+      for (size_t i = 0; i + 1 < bins.size(); ++i) {
+        CategoricalBin merged_bin;
+        merged_bin.merge_with(bins[i]);
+        merged_bin.merge_with(bins[i + 1]);
+        merged_bin.calculate_metrics(total_pos, total_neg);
+
+        std::vector<CategoricalBin> temp_bins;
+        temp_bins.reserve(bins.size() - 1);
+        temp_bins.insert(temp_bins.end(), bins.begin(), bins.begin() + i);
+        temp_bins.push_back(merged_bin);
+        if (i + 2 < bins.size()) {
+          temp_bins.insert(temp_bins.end(), bins.begin() + i + 2, bins.end());
+        }
+
+        double score = calculateIV(temp_bins);
+        if (std::isfinite(score) && score > best_score) {
+          best_score = score;
+          best_index = i;
+        }
+      }
+
+      bins[best_index].merge_with(bins[best_index + 1]);
+      bins[best_index].calculate_metrics(total_pos, total_neg);
+      bins.erase(bins.begin() + best_index + 1);
+
+      iv_cache->invalidate_row(best_index);
+      iv_cache->resize(bins.size());
+      iterations_run++;
+    }
   }
   
   // Enhanced monotonicity enforcement with gradient relaxation
@@ -527,7 +609,11 @@ public:
     
     // Greedy merging
     greedyMerge();
-    
+
+    // Enforce the caller's bin budget: the greedy rule's own tolerance does
+    // not guarantee bins.size() <= max_bins.
+    enforceMaxBins();
+
     // Monotonicity enforcement
     ensureMonotonicity();
     

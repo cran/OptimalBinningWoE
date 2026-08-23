@@ -21,7 +21,6 @@
  * while maximizing predictive power.
  */
 
-using namespace Rcpp;
 
 // Include shared headers
 #include "common/optimal_binning_common.h"
@@ -216,8 +215,10 @@ private:
       return bin_edges.size() - 2; // Last bin
     }
     
-    // Binary search for the bin
-    auto it = std::upper_bound(bin_edges.begin(), bin_edges.end(), value);
+    // Binary search for the bin. Bins are right-closed (a, b], as the emitted
+    // labels state, so a value sitting exactly on an edge belongs to the bin
+    // BELOW it: lower_bound (first edge >= value), not upper_bound.
+    auto it = std::lower_bound(bin_edges.begin(), bin_edges.end(), value);
     size_t idx = std::distance(bin_edges.begin(), it) - 1;
     
     return idx;
@@ -384,20 +385,10 @@ private:
     // Ensure minimum bandwidth
     h = std::max(h, range / 1000.0);
     
-    // Kernel density estimation at each point
-    // Using a simple Gaussian kernel
-    for (size_t i = 0; i < n; ++i) {
-      double xi = sorted_values[i];
-      double local_sum = 0.0;
-      
-      for (size_t j = 0; j < n; ++j) {
-        double xj = sorted_values[j];
-        double z = (xi - xj) / h;
-        local_sum += std::exp(-0.5 * z * z); // Gaussian kernel
-      }
-      
-      density[i] = local_sum / (n * h * std::sqrt(2.0 * M_PI));
-    }
+    // Kernel density estimation, by linear binning on a grid rather than by
+    // evaluating every point against every other one. The double loop this
+    // replaces measured n^2.00 and was the entire cost of the algorithm.
+    density = gaussian_kde_sorted(sorted_values, h);
     
     return density;
   }
@@ -915,7 +906,7 @@ Rcpp::List optimal_binning_numerical_ldb(
   } catch(std::exception &e) {
     forward_exception_to_r(e);
   } catch(...) {
-    ::Rf_error("Unknown C++ exception in optimal_binning_numerical_ldb");
+    Rcpp::stop("Unknown C++ exception in optimal_binning_numerical_ldb");
   }
   
   // Should never reach here

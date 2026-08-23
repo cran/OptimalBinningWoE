@@ -10,7 +10,6 @@
 #include <unordered_set>
 #include <numeric> // Required for std::accumulate
 
-using namespace Rcpp;
 
 // Include shared headers
 #include "common/optimal_binning_common.h"
@@ -480,6 +479,10 @@ private:
       Rcpp::Rcout << "Info: Initial number of bins (" << bins.size()
                   << ") is already <= max_bins (" << max_bins
                   << "). Skipping merging phase." << std::endl;
+      // Already at a valid stopping state: the bin-count target is met without
+      // any merging. This early return bypasses the fix-up at the end of the
+      // function, so record convergence here too.
+      converged = true;
       // Still need to check min_bins later
       return;
     }
@@ -507,9 +510,33 @@ private:
       // Check convergence based on small absolute change in min divergence
       if (previous_min_divergence >= 0 && // Check after first iteration
           std::fabs(current_min_divergence - previous_min_divergence) < convergence_threshold) {
+        // The cost of the best available merge has settled. Previously this
+        // also broke out of the loop, which abandoned the descent to max_bins
+        // and returned L - 1 bins for an L-category feature (299 bins for
+        // max_bins = 5 on 300 levels) -- silently, since converged was still
+        // reported as TRUE and nothing downstream re-imposed the cap. With
+        // many similarly sized categories the second-cheapest merge costs
+        // almost exactly what the cheapest one did, so the test fired on the
+        // second iteration, after a single merge.
+        //
+        // max_bins is a documented user constraint, not a target to give up on
+        // once the divergence stops moving, so we record the convergence and
+        // keep merging by the same criterion (the pair with the lowest
+        // divergence, i.e. the most similar pair). The loop still exits on
+        // max_iterations.
+        //
+        // This does not weaken the divergence rule: the merge order is
+        // unchanged and the loop's own goal was always to reach max_bins. The
+        // divergence tolerance was an early exit, not a statistical stopping
+        // rule. min_bins is not violated either: initialize_bins() clamps
+        // min_bins <= max_bins, so merging down to max_bins stays above it.
+        //
+        // Only the first crossing is reported, since the loop now continues
+        // past it.
+        if (!converged) {
+          Rcpp::Rcout << "Info: Converged after " << iterations_run << " iterations (divergence change < threshold)." << std::endl;
+        }
         converged = true;
-        Rcpp::Rcout << "Info: Converged after " << iterations_run << " iterations (divergence change < threshold)." << std::endl;
-        break;
       }
       // Check convergence if min divergence becomes excessively large (no good merges left)
       // Using a threshold relative to initial divergences might be better, but absolute check is simpler
@@ -550,13 +577,22 @@ private:
    */
   std::pair<double, std::pair<size_t, size_t>> find_most_similar_bins() const {
     double min_divergence = std::numeric_limits<double>::max();
-    std::pair<size_t, size_t> best_pair = {0, 0}; // Default initialization
-    
+    // Seeded with the first mergeable pair rather than {0, 0}. The search below
+    // only replaces this on a strictly smaller divergence, so a matrix whose
+    // every entry is already double::max -- or holds a NaN, against which every
+    // comparison is false -- would otherwise leave the default in place and
+    // hand the caller a pair naming the same bin twice. Merging a bin with
+    // itself and then erasing the duplicate would drop its observations from
+    // the binning. No input reaching that state was found, so this closes a
+    // defensive gap rather than a demonstrated defect; {0, 1} is a valid merge
+    // in every case where this function is called at all.
+    std::pair<size_t, size_t> best_pair = {0, 1};
+
     const size_t n = bins.size();
     if (n < 2) {
-      return {min_divergence, best_pair}; // Cannot merge if less than 2 bins
+      return {min_divergence, {0, 0}}; // Cannot merge if less than 2 bins
     }
-    
+
     for (size_t i = 0; i < n; ++i) {
       // Only check upper triangle (j > i)
       for (size_t j = i + 1; j < n; ++j) {
@@ -566,7 +602,7 @@ private:
         }
       }
     }
-    
+
     return {min_divergence, best_pair};
   }
   
@@ -941,7 +977,16 @@ private:
     Rcpp::IntegerVector counts_pos(n_bins);
     Rcpp::IntegerVector counts_neg(n_bins);
     Rcpp::IntegerVector ids(n_bins);
-    
+    Rcpp::NumericVector iv_values(n_bins);
+
+    // Standard Information Value, reported alongside the divergence measure.
+    // It is computed directly from the smoothed class distributions rather than
+    // from bins[i].woe, because the default bin_method "woe1" is Zeng's log-odds
+    // ln((pos+0.5)/(neg+0.5)), which differs from standard WoE by the constant
+    // ln(TP/TN); deriving IV from it would give a wrong value.
+    const double iv_pos_denom = static_cast<double>(total_pos) + n_bins * 0.5;
+    const double iv_neg_denom = static_cast<double>(total_neg) + n_bins * 0.5;
+
     for (size_t i = 0; i < n_bins; ++i) {
       ids[i] = i + 1; // 1-based index for R
       bin_names[i] = join_categories(bins[i].categories);
@@ -950,8 +995,18 @@ private:
       bin_counts[i] = bins[i].total();
       counts_pos[i] = bins[i].count_pos;
       counts_neg[i] = bins[i].count_neg;
+
+      // iv_bin = (dist_pos - dist_neg) * ln(dist_pos / dist_neg)
+      double iv_dist_pos = (static_cast<double>(bins[i].count_pos) + 0.5) / iv_pos_denom;
+      double iv_dist_neg = (static_cast<double>(bins[i].count_neg) + 0.5) / iv_neg_denom;
+      iv_values[i] = (iv_dist_pos - iv_dist_neg) * std::log(iv_dist_pos / iv_dist_neg);
     }
-    
+
+    double total_iv = 0.0;
+    for (size_t i = 0; i < n_bins; ++i) {
+      total_iv += iv_values[i];
+    }
+
     // Calculate total divergence correctly based on the method
     double total_divergence = 0.0;
     if (divergence_method == "l2") {
@@ -983,6 +1038,7 @@ private:
       Rcpp::Named("id") = ids,
       Rcpp::Named("bin") = bin_names,
       Rcpp::Named("woe") = woe_values,
+      Rcpp::Named("iv") = iv_values,
       Rcpp::Named("divergence") = divergence_values, // Per-bin value/contribution
       Rcpp::Named("count") = bin_counts,
       Rcpp::Named("count_pos") = counts_pos,
@@ -990,6 +1046,7 @@ private:
       Rcpp::Named("converged") = converged,
       Rcpp::Named("iterations") = iterations_run,
       Rcpp::Named("total_divergence") = total_divergence, // Correct total divergence
+      Rcpp::Named("total_iv") = total_iv,
       Rcpp::Named("bin_method") = bin_method,
       Rcpp::Named("divergence_method") = divergence_method
     );

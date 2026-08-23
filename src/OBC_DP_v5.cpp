@@ -14,11 +14,10 @@
 #include <limits>
 #include <chrono>
 
-using namespace Rcpp;
-
 // Include shared headers
 #include "common/optimal_binning_common.h"
 #include "common/bin_structures.h"
+#include "common/monotonicity_utils.h"
 
 using namespace Rcpp;
 using namespace OptimalBinning;
@@ -28,44 +27,6 @@ using namespace OptimalBinning;
 // Local constant removed (uses shared definition)
 constexpr double NEGATIVE_INFINITY = -std::numeric_limits<double>::infinity();
 
-/**
- * @brief Structure to store information about a category
- * 
- * This structure maintains count statistics for each category,
- * including total observations, positive events, and event rate.
- */
-// struct CategoryStats {
-//   int count;          // Total count of observations
-//   int pos_count;      // Count of positive events (target=1)
-//   int neg_count;      // Count of negative events (target=0)
-//   double event_rate;  // Ratio of positive events to total count
-//   
-//   // Default constructor
-//   CategoryStats() : count(0), pos_count(0), neg_count(0), event_rate(0.0) {}
-//   
-//   /**
-//    * @brief Update category statistics with a new observation
-//    * 
-//    * @param is_positive Boolean indicating if the observation is a positive event
-//    */
-//   void update(int is_positive) {
-//     count++;
-//     if (is_positive) {
-//       pos_count++;
-//     } else {
-//       neg_count++;
-//     }
-//     event_rate = static_cast<double>(pos_count) / static_cast<double>(count);
-//   }
-// };
-
-/**
- * @brief Structure to store information about a bin
- * 
- * Contains all the relevant metrics for a bin in the final binning solution,
- * including WoE (Weight of Evidence) and IV (Information Value).
- */
-// Local CategoricalBin definition removed
 
 
 /**
@@ -457,6 +418,12 @@ private:
                   return a.event_rate() < b.event_rate();
                 });
     }
+
+    // One bin per category, already within max_bins: an exact, final result.
+    // This fast path bypasses perform_dynamic_programming(), the only other
+    // place that sets the flag.
+    converged = true;
+    iterations_run = 1;
   }
   
   /**
@@ -585,15 +552,17 @@ private:
         category_mapping[cat] = merged_bin;
       }
       
-      // Remove the two merged bins and add the new one
+      // Remove the two merged bins.
       bins_with_counts.erase(bins_with_counts.begin(), bins_with_counts.begin() + 2);
-      bins_with_counts.emplace_back(merged_bin, merged_counts);
-      
-      // Re-sort by count
-      std::sort(bins_with_counts.begin(), bins_with_counts.end(),
-                [](const auto& a, const auto& b) {
-                  return a.second.first < b.second.first;
-                });
+
+      // Insert merged bin at the correct sorted position (binary search, O(log m + m))
+      // instead of full re-sort (O(m log m)).
+      auto cmp_count = [](const auto& a, const auto& b) {
+        return a.second.first < b.second.first;
+      };
+      auto ins_pos = std::lower_bound(bins_with_counts.begin(), bins_with_counts.end(),
+                                      std::make_pair(merged_bin, merged_counts), cmp_count);
+      bins_with_counts.insert(ins_pos, {merged_bin, merged_counts});
     }
     
     // Update merged_categories with final result
@@ -638,9 +607,24 @@ private:
     if (monotonic_trend == "descending") {
       std::reverse(sorted_categories.begin(), sorted_categories.end());
     }
-    // For "auto", determine trend based on correlation with target
+    // P2.3 fix (2026-05-16): implement "auto" trend detection via Welford
+    // correlation between sorted event rates and target, using
+    // detect_trend_welford_woe() from monotonicity_utils.h.
     else if (monotonic_trend == "auto") {
-      // This would be implemented here - for now we default to ascending
+      // Build WoE proxy from event rates to detect trend direction
+      std::vector<double> event_rates;
+      event_rates.reserve(categories_with_rates.size());
+      for (const auto& cr : categories_with_rates) {
+        event_rates.push_back(cr.second);
+      }
+      MonotonicTrend detected = detect_trend_welford_woe(event_rates);
+      if (detected == MonotonicTrend::DESCENDING) {
+        // Already sorted ascending; reverse for descending
+        std::reverse(sorted_categories.begin(), sorted_categories.end());
+        monotonic_trend = "descending";
+      } else {
+        monotonic_trend = "ascending";
+      }
     }
   }
   
@@ -680,83 +664,55 @@ private:
    * Executes the main dynamic programming algorithm to find optimal bins.
    */
   void perform_dynamic_programming() {
+    // P3.1 fix (2026-05-16): removed spurious outer iteration loop.
+    // DP is an exact, deterministic algorithm — it finds the global optimum
+    // in a single pass. The previous loop (up to max_iterations=1000) was
+    // redundant because the DP table never changes between iterations (no
+    // external state), causing a 1000x unnecessary overhead for the O(n²k)
+    // inner computation and O(n²) precomputed woe/iv table.
     const size_t n = sorted_categories.size();
-    std::vector<double> last_dp_row(max_bins + 1, NEGATIVE_INFINITY);
-    last_dp_row[0] = 0.0;
-    
-    converged = false;
-    iterations_run = 0;
-    
-    bool enforce_monotonicity = (monotonic_trend != "none");
-    
-    for (iterations_run = 1; iterations_run <= max_iterations; ++iterations_run) {
-      bool any_update = false;
-      
-      // Optimization: precompute values for inner loop
-      std::vector<std::vector<std::pair<double, double>>> bin_woe_iv(n + 1);
-      for (size_t i = 1; i <= n; ++i) {
-        bin_woe_iv[i].resize(i);
-        for (size_t j = 0; j < i; ++j) {
-          double count_pos_bin = cum_count_pos[i] - cum_count_pos[j];
-          double count_neg_bin = cum_count_neg[i] - cum_count_neg[j];
-          
-          double woe, iv;
-          compute_woe_iv(count_pos_bin, count_neg_bin, total_pos, total_neg, woe, iv);
-          
-          bin_woe_iv[i][j] = {woe, iv};
-        }
+
+    converged = true;   // DP always converges — it is exact
+    iterations_run = 1; // one pass by definition
+
+    bool enforce_mono = (monotonic_trend != "none");
+
+    // Precompute WoE/IV for all (i,j) bin segments — O(n²), done once
+    std::vector<std::vector<std::pair<double, double>>> bin_woe_iv(n + 1);
+    for (size_t i = 1; i <= n; ++i) {
+      bin_woe_iv[i].resize(i);
+      for (size_t j = 0; j < i; ++j) {
+        double cp = cum_count_pos[i] - cum_count_pos[j];
+        double cn = cum_count_neg[i] - cum_count_neg[j];
+        double woe, iv;
+        compute_woe_iv(cp, cn, total_pos, total_neg, woe, iv);
+        bin_woe_iv[i][j] = {woe, iv};
       }
-      
-      // Main DP loop
-      for (size_t i = 1; i <= n; ++i) {
-        for (int k = 1; k <= max_bins && k <= static_cast<int>(i); ++k) {
-          for (size_t j = (k - 1 > 0 ? k - 1 : 0); j < i; ++j) {
-            // Apply monotonicity constraint if required
-            if (enforce_monotonicity && k > min_bins && j > 0) {
-              double prev_woe = bin_woe_iv[j][j-1].first;
-              double curr_woe = bin_woe_iv[i][j].first;
-              
-              // Check monotonicity based on trend
-              bool monotonicity_violated = false;
-              if (monotonic_trend == "ascending" || monotonic_trend == "auto") {
-                monotonicity_violated = (prev_woe > curr_woe);
-              } else if (monotonic_trend == "descending") {
-                monotonicity_violated = (prev_woe < curr_woe);
-              }
-              
-              if (monotonicity_violated) {
-                continue;
-              }
+    }
+
+    // Main DP pass — O(n² × k)
+    for (size_t i = 1; i <= n; ++i) {
+      for (int k = 1; k <= max_bins && k <= static_cast<int>(i); ++k) {
+        for (size_t j = (k > 1 ? k - 1 : 0); j < i; ++j) {
+          if (enforce_mono && k > 1 && j > 0) {
+            double prev_woe = bin_woe_iv[j][j - 1].first;
+            double curr_woe = bin_woe_iv[i][j].first;
+            bool violated = false;
+            if (monotonic_trend == "ascending" || monotonic_trend == "auto") {
+              violated = (prev_woe > curr_woe);
+            } else if (monotonic_trend == "descending") {
+              violated = (prev_woe < curr_woe);
             }
-            
-            double iv_bin = bin_woe_iv[i][j].second;
-            double total_iv = dp[j][k - 1] + iv_bin;
-            
-            if (total_iv > dp[i][k]) {
-              dp[i][k] = total_iv;
-              prev_bin[i][k] = static_cast<int>(j);
-              any_update = true;
-            }
+            if (violated) continue;
+          }
+
+          double candidate = dp[j][k - 1] + bin_woe_iv[i][j].second;
+          if (candidate > dp[i][k]) {
+            dp[i][k] = candidate;
+            prev_bin[i][k] = static_cast<int>(j);
           }
         }
       }
-      
-      // Check convergence
-      double max_diff = 0.0;
-      for (int k = 0; k <= max_bins; ++k) {
-        double diff = std::fabs(dp[n][k] - last_dp_row[k]);
-        max_diff = std::max(max_diff, diff);
-        last_dp_row[k] = dp[n][k];
-      }
-      
-      converged = (max_diff < convergence_threshold);
-      if (converged || !any_update) {
-        break;
-      }
-    }
-    
-    if (!converged && iterations_run >= max_iterations) {
-      Rcpp::warning("Convergence not reached in max_iterations. Using best solution found.");
     }
   }
   
@@ -788,9 +744,17 @@ private:
     
     size_t idx = n;
     int k = best_k;
-    
+
+    // P1.1 fix (2026-05-16): guard against -1 sentinel in prev_bin before
+    // casting to size_t (which would produce 2^64-1 → out-of-bounds UB crash)
     while (k > 0) {
       int prev_j = prev_bin[idx][k];
+      if (prev_j < 0 || static_cast<size_t>(prev_j) > n) {
+        throw std::runtime_error(
+          "DP backtracking failed: invalid predecessor index (" +
+          std::to_string(prev_j) + "). The DP table may be incomplete."
+        );
+      }
       bin_edges.push_back(static_cast<size_t>(prev_j));
       idx = static_cast<size_t>(prev_j);
       k -= 1;

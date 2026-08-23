@@ -1,542 +1,175 @@
-## ----setup, include = FALSE---------------------------------------------------
+## ----setup, include = FALSE-----------------------------------------------------------------------
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>",
-  fig.width = 8,
-  fig.height = 6,
+  fig.width = 7.5,
+  fig.height = 5,
+  fig.align = "center",
   warning = FALSE,
   message = FALSE
 )
+options(width = 100, digits = 4)
 
-## ----install, eval=FALSE------------------------------------------------------
-# # From GitHub
-# devtools::install_github("evandeilton/OptimalBinningWoE")
-# 
-# # Install dependencies for this vignette
-# install.packages(c("scorecard", "tidymodels", "pROC"))
-
-## ----load_data----------------------------------------------------------------
+## ----library--------------------------------------------------------------------------------------
 library(OptimalBinningWoE)
-library(scorecard)
 
-# Load German credit dataset
-data("germancredit", package = "scorecard")
-
-# Inspect structure
-dim(germancredit)
-str(germancredit[, 1:8])
-
-# Target variable
-table(germancredit$creditability)
-cat("\nDefault rate:", round(mean(germancredit$creditability == "bad") * 100, 2), "%\n")
-
-## ----data_prep----------------------------------------------------------------
-# Create binary target (must be a factor for tidymodels classification)
-german <- germancredit
-german$default <- factor(
-  ifelse(german$creditability == "bad", 1, 0),
-  levels = c(0, 1),
-  labels = c("good", "bad")
-)
-german$creditability <- NULL
-
-# Select key features for demonstration
-features_num <- c("duration.in.month", "credit.amount", "age.in.years")
-features_cat <- c(
-  "status.of.existing.checking.account", "credit.history",
-  "purpose", "savings.account.and.bonds"
+## ----data-----------------------------------------------------------------------------------------
+german <- read.csv(
+  gzfile(system.file("extdata", "germancredit.csv.gz",
+                     package = "OptimalBinningWoE")),
+  stringsAsFactors = FALSE
 )
 
-german_model <- german[c("default", features_num, features_cat)]
+# credit_risk is 1 for a good customer; the event we model is default
+german$default <- 1L - german$credit_risk
+german$credit_risk <- NULL
 
-# Summary statistics
-cat("Numerical features:\n")
-summary(german_model[, features_num])
+dim(german)
+table(german$default)
 
-cat("\n\nCategorical features:\n")
-sapply(german_model[, features_cat], function(x) length(unique(x)))
+## ----data-glimpse---------------------------------------------------------------------------------
+str(german[, c("duration", "amount", "age", "purpose", "savings")])
 
-## ----quickstart_single--------------------------------------------------------
-# Bin credit amount with JEDI algorithm
-result_single <- obwoe(
-  data = german_model,
-  target = "default",
-  feature = "credit.amount",
-  algorithm = "jedi",
-  min_bins = 3,
-  max_bins = 6
+## ----single-fit-----------------------------------------------------------------------------------
+fit <- obwoe(german, target = "default", feature = "duration",
+             min_bins = 3, max_bins = 6)
+fit
+
+## ----single-result--------------------------------------------------------------------------------
+res <- fit$results$duration
+data.frame(
+  bin   = res$bin,
+  count = res$count,
+  pos   = res$count_pos,
+  rate  = round(res$count_pos / res$count, 4),
+  woe   = round(res$woe, 4),
+  iv    = round(res$iv, 4)
 )
 
-# View results
-print(result_single)
+## ----single-cutpoints-----------------------------------------------------------------------------
+res$cutpoints
 
-# Detailed binning table
-result_single$results$credit.amount
+## ----single-plot, fig.height=4.5------------------------------------------------------------------
+plot(fit, type = "woe", feature = "duration")
 
-## ----quickstart_plot----------------------------------------------------------
-# WoE pattern visualization
-plot(result_single, type = "woe")
+## ----gains----------------------------------------------------------------------------------------
+gains <- obwoe_gains(fit, feature = "duration", sort_by = "woe")
+gains
 
-## ----quickstart_insights------------------------------------------------------
-# Extract metrics
-bins <- result_single$results$credit.amount
-
-cat("Binning Summary:\n")
-cat("  Number of bins:", nrow(bins), "\n")
-cat("  Total IV:", round(sum(bins$iv), 4), "\n")
-cat("  Monotonic:", all(diff(bins$woe) >= 0) || all(diff(bins$woe) <= 0), "\n\n")
-
-# Event rates by bin
-bins_summary <- data.frame(
-  Bin = bins$bin,
-  Count = bins$count,
-  Event_Rate = round(bins$count_pos / bins$count * 100, 2),
-  WoE = round(bins$woe, 4),
-  IV_Contribution = round(bins$iv, 4)
-)
-
-print(bins_summary)
-
-## ----multifeature_binning-----------------------------------------------------
-# Bin all features simultaneously
-result_multi <- obwoe(
-  data = german_model,
-  target = "default",
-  algorithm = "cm",
-  min_bins = 3,
-  max_bins = 4
-)
-
-# Summary of all features
-summary(result_multi)
-
-## ----feature_selection--------------------------------------------------------
-# Extract IV summary
-iv_summary <- result_multi$summary[!result_multi$summary$error, ]
-iv_summary <- iv_summary[order(-iv_summary$total_iv), ]
-
-# Top predictive features
-cat("Top 5 Features by Information Value:\n\n")
-print(head(iv_summary[, c("feature", "total_iv", "n_bins")], 5))
-
-# Select features with IV >= 0.02
-strong_features <- iv_summary$feature[iv_summary$total_iv >= 0.02]
-cat("\n\nFeatures with IV >= 0.02:", length(strong_features), "\n")
-
-## ----gains_analysis-----------------------------------------------------------
-# Compute gains for best numerical feature
-best_num_feature <- iv_summary$feature[
-  iv_summary$feature %in% features_num
-][1]
-
-gains <- obwoe_gains(result_multi, feature = best_num_feature, sort_by = "id")
-
-print(gains)
-
-# Plot gains curves
-oldpar <- par(mfrow = c(2, 2))
+## ----gains-plot, fig.height=6---------------------------------------------------------------------
+op <- par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
 plot(gains, type = "cumulative")
 plot(gains, type = "ks")
 plot(gains, type = "lift")
 plot(gains, type = "woe_iv")
-par(oldpar)
+par(op)
 
-## ----algorithm_comparison-----------------------------------------------------
-# Test multiple algorithms on credit.amount
-algorithms <- c("jedi", "mdlp", "mob", "ewb", "cm")
+## ----multi-fit------------------------------------------------------------------------------------
+model <- obwoe(german, target = "default", min_bins = 2, max_bins = 6)
+model
 
-compare_algos <- function(data, target, feature, algos) {
-  results <- lapply(algos, function(algo) {
-    tryCatch(
-      {
-        fit <- obwoe(
-          data = data,
-          target = target,
-          feature = feature,
-          algorithm = algo,
-          min_bins = 3,
-          max_bins = 6
-        )
+## ----multi-summary--------------------------------------------------------------------------------
+summary(model)
 
-        data.frame(
-          Algorithm = algo,
-          N_Bins = fit$summary$n_bins[1],
-          IV = round(fit$summary$total_iv[1], 4),
-          Converged = fit$summary$converged[1],
-          stringsAsFactors = FALSE
-        )
-      },
-      error = function(e) {
-        # Return NA but log error for debugging during vignette rendering
-        message(sprintf("Algorithm '%s' failed: %s", algo, e$message))
-        data.frame(
-          Algorithm = algo,
-          N_Bins = NA_integer_,
-          IV = NA_real_,
-          Converged = FALSE,
-          stringsAsFactors = FALSE
-        )
-      }
-    )
-  })
+## ----select---------------------------------------------------------------------------------------
+sel <- obwoe_select(model)
+head(sel[, c("feature", "type", "n_bins", "total_iv", "iv_class",
+             "ks", "gini", "monotonic", "quality", "selected")], 10)
 
-  do.call(rbind, results)
+## ----select-rejected------------------------------------------------------------------------------
+sel[!sel$selected, c("feature", "total_iv", "iv_class", "reason")]
+
+## ----select-admit---------------------------------------------------------------------------------
+admitted <- obwoe_select(model, iv_max = Inf)
+admitted[admitted$feature == "status",
+         c("feature", "total_iv", "quality", "selected", "reason")]
+
+## ----select-policy--------------------------------------------------------------------------------
+strict <- obwoe_select(
+  model,
+  iv_min            = 0.02,      # drop the Unpredictive band
+  iv_max            = 0.50,      # drop the Suspicious band
+  require_monotonic = "numeric", # ordering is intrinsic only for numerics
+  monotonicity      = "strict",  # no ties between adjacent bins
+  min_bin_pct       = 0.05,      # every bin holds at least 5% of the base
+  allow_degenerate  = FALSE,     # no bin without events or without non-events
+  top_n             = 8,
+  sort_by           = "ks"
+)
+table(strict$reason)
+
+## ----select-full----------------------------------------------------------------------------------
+detail <- obwoe_select(model, detail = "full")
+dim(detail)
+
+detail[detail$feature == "savings",
+       c("bin", "n_categories", "count", "pos_rate", "woe", "iv", "lift")]
+
+## ----algo-list------------------------------------------------------------------------------------
+algos <- obwoe_algorithms()
+table(numerical = algos$numerical, categorical = algos$categorical)
+
+## ----algo-compare---------------------------------------------------------------------------------
+compare <- function(alg) {
+  f <- obwoe(german, target = "default", feature = "amount",
+             algorithm = alg, min_bins = 2, max_bins = 6)
+  s <- obwoe_select(f, require_monotonic = "none")
+  data.frame(algorithm = alg, n_bins = s$n_bins, iv = round(s$total_iv, 4),
+             ks = round(s$ks, 4), monotonic = s$monotonic)
 }
 
-# Compare on credit.amount
-comp_result <- compare_algos(
-  german_model,
-  "default",
-  "credit.amount",
-  algorithms
+do.call(rbind, lapply(c("jedi", "mdlp", "mob", "ir", "dp"), compare))
+
+## ----apply----------------------------------------------------------------------------------------
+scored <- obwoe_apply(german, model, keep_original = FALSE)
+head(scored[, c("default", "duration_bin", "duration_woe",
+                "purpose_bin", "purpose_woe")], 4)
+
+## ----apply-newdata--------------------------------------------------------------------------------
+two <- obwoe(german, target = "default",
+             feature = c("duration", "purpose"), max_bins = 6)
+
+new_data <- data.frame(
+  duration = c(4, 10, 200, NA),
+  purpose  = c("car (new)", "unseen category", "education", NA)
+)
+obwoe_apply(new_data, two, keep_original = TRUE)
+
+## ----apply-model----------------------------------------------------------------------------------
+keep <- sel$feature[sel$selected]
+woe_cols <- paste0(keep, "_woe")
+train <- scored[, c("default", woe_cols)]
+
+glm_fit <- glm(default ~ ., data = train, family = binomial())
+round(head(coef(summary(glm_fit)), 6), 4)
+
+## ----sql------------------------------------------------------------------------------------------
+obwoe_sql(
+  model,
+  table        = "risk.applications",
+  features     = c("duration", "purpose"),
+  keep_columns = "application_id",
+  dialect      = "postgres"
 )
 
-cat("Algorithm Comparison on 'credit.amount':\n\n")
-print(comp_result[order(-comp_result$IV), ])
+## ----sql-case-------------------------------------------------------------------------------------
+obwoe_sql(model, features = "age", style = "case", comment = FALSE)
 
-## ----algo_guide---------------------------------------------------------------
-# View algorithm capabilities
-algo_info <- obwoe_algorithms()
-
-cat("Algorithm Categories:\n\n")
-
-cat("Fast for Large Data (O(n) complexity):\n")
-print(algo_info[
-  algo_info$algorithm %in% c("ewb", "sketch"),
-  c("algorithm", "numerical", "categorical")
-])
-
-cat("\n\nRegulatory Compliant (Monotonic):\n")
-print(algo_info[
-  algo_info$algorithm %in% c("mob", "mblp", "ir"),
-  c("algorithm", "numerical", "categorical")
-])
-
-cat("\n\nGeneral Purpose (algorithm):\n")
-print(algo_info[
-  algo_info$name %in% c("jedi", "cm", "mdlp"),
-  c("algorithm", "numerical", "categorical")
-])
-
-## ----tidymodels_setup, message=FALSE------------------------------------------
-library(tidymodels)
-
-# Train/test split with stratification
-set.seed(123)
-german_split <- initial_split(german_model, prop = 0.7, strata = default)
-train_data <- training(german_split)
-test_data <- testing(german_split)
-
-cat("Training set:", nrow(train_data), "observations\n")
-cat("Test set:", nrow(test_data), "observations\n")
-cat("Train default rate:", round(mean(train_data$default == "bad") * 100, 2), "%\n")
-
-## ----recipe_definition--------------------------------------------------------
-# Create recipe with WoE transformation
-rec_woe <- recipe(default ~ ., data = train_data) %>%
-  step_obwoe(
-    all_predictors(),
-    outcome = "default",
-    algorithm = "jedi",
-    min_bins = 2,
-    max_bins = tune(), # Hyperparameter tuning
-    bin_cutoff = 0.05,
-    output = "woe"
-  )
-
-# Preview recipe
-rec_woe
-
-## ----workflow_setup-----------------------------------------------------------
-# Logistic regression specification
-lr_spec <- logistic_reg() %>%
-  set_engine("glm") %>%
-  set_mode("classification")
-
-# Create complete workflow
-wf_credit <- workflow() %>%
-  add_recipe(rec_woe) %>%
-  add_model(lr_spec)
-
-wf_credit
-
-## ----cv_tuning----------------------------------------------------------------
-# Define tuning grid
-tune_grid <- tibble(max_bins = c(4, 6, 8))
-
-# Create cross-validation folds
-set.seed(456)
-cv_folds <- vfold_cv(train_data, v = 5, strata = default)
-
-# Tune workflow
-tune_results <- tune_grid(
-  wf_credit,
-  resamples = cv_folds,
-  grid = tune_grid,
-  metrics = metric_set(roc_auc, accuracy)
-)
-
-# Best configuration
-collect_metrics(tune_results) %>%
-  # filter(.metric == "roc_auc") %>%
-  arrange(desc(mean))
-
-# Visualize tuning
-autoplot(tune_results, metric = "roc_auc")
-
-## ----final_model--------------------------------------------------------------
-# Select best parameters
-best_params <- select_best(tune_results, metric = "roc_auc")
-cat("Optimal max_bins:", best_params$max_bins, "\n\n")
-
-# Finalize and fit
-final_wf <- finalize_workflow(wf_credit, best_params)
-final_fit <- fit(final_wf, data = train_data)
-
-# Extract coefficients
-final_fit %>%
-  extract_fit_parsnip() %>%
-  tidy() %>%
-  arrange(desc(abs(estimate)))
-
-## ----model_eval---------------------------------------------------------------
-# Predictions on test set
-test_pred <- augment(final_fit, test_data)
-
-# Performance metrics
-metrics <- metric_set(roc_auc, accuracy, sens, spec, precision)
-metrics(test_pred,
-  truth = default, estimate = .pred_class,
-  .pred_bad, event_level = "second"
-)
-
-# ROC curve
-roc_curve(test_pred,
-  truth = default, .pred_bad,
-  event_level = "second"
-) %>%
-  autoplot() +
-  labs(title = "ROC Curve - German Credit Model")
-
-## ----inspect_binning----------------------------------------------------------
-# Extract trained recipe
-trained_rec <- extract_recipe(final_fit)
-woe_step <- trained_rec$steps[[1]]
-
-# View binning for credit.amount
-credit_bins <- woe_step$binning_results$credit.amount
-
-data.frame(
-  Bin = credit_bins$bin,
-  WoE = round(credit_bins$woe, 4),
-  IV = round(credit_bins$iv, 4)
-)
-
-## ----scorecard_split----------------------------------------------------------
-set.seed(789)
-n_total <- nrow(german_model)
-train_idx <- sample(1:n_total, size = 0.7 * n_total)
-
-train_sc <- german_model[train_idx, ]
-test_sc <- german_model[-train_idx, ]
-
-## ----scorecard_binning--------------------------------------------------------
-# Use monotonic binning for regulatory compliance
-sc_binning <- obwoe(
-  data = train_sc,
-  target = "default",
-  algorithm = "mob", # Monotonic Optimal Binning
-  min_bins = 3,
-  max_bins = 5,
-  control = control.obwoe(
-    bin_cutoff = 0.05,
-    convergence_threshold = 1e-6
-  )
-)
-
-summary(sc_binning)
-
-## ----scorecard_transform------------------------------------------------------
-# Transform training data with error handling
-train_woe <- tryCatch(
-  {
-    obwoe_apply(train_sc, sc_binning, keep_original = FALSE)
-  },
-  error = function(e) {
-    message("Error in obwoe_apply for training data: ", e$message)
-    message("This may occur with certain data distributions. Skipping transformation.")
-    return(NULL)
-  }
-)
-
-# Only proceed if transformation succeeded
-if (!is.null(train_woe)) {
-  # Transform test data (uses training bins)
-  test_woe <- obwoe_apply(test_sc, sc_binning, keep_original = FALSE)
-
-  # Preview transformed features
-  head(train_woe[, c("default", grep("_woe$", names(train_woe), value = TRUE)[1:3])], 10)
-} else {
-  message("Skipping WoE transformation demonstration due to data incompatibility.")
-}
-
-## ----scorecard_model----------------------------------------------------------
-if (!is.null(train_woe)) {
-  # Select features with IV >= 0.02
-  selected <- sc_binning$summary$feature[
-    sc_binning$summary$total_iv >= 0.02 &
-      !sc_binning$summary$error
-  ]
-
-  woe_vars <- paste0(selected, "_woe")
-  formula_str <- paste("default ~", paste(woe_vars, collapse = " + "))
-
-  # Fit model
-  scorecard_glm <- glm(
-    as.formula(formula_str),
-    data = train_woe,
-    family = binomial(link = "logit")
-  )
-
-  summary(scorecard_glm)
-} else {
-  message("Skipping model building - WoE transformation failed.")
-}
-
-## ----scorecard_validation-----------------------------------------------------
-if (!is.null(train_woe) && exists("scorecard_glm")) {
-  library(pROC)
-
-  # Predictions
-  test_woe$score <- predict(scorecard_glm, newdata = test_woe, type = "response")
-
-  # ROC curve
-  roc_obj <- roc(test_woe$default, test_woe$score, quiet = TRUE)
-  auc_val <- auc(roc_obj)
-
-  # KS statistic
-  ks_stat <- max(abs(
-    ecdf(test_woe$score[test_woe$default == "bad"])(seq(0, 1, 0.01)) -
-      ecdf(test_woe$score[test_woe$default == "good"])(seq(0, 1, 0.01))
-  ))
-
-  # Gini coefficient
-  gini <- 2 * auc_val - 1
-
-  cat("Scorecard Performance:\n")
-  cat("  AUC:  ", round(auc_val, 4), "\n")
-  cat("  Gini: ", round(gini, 4), "\n")
-  cat("  KS:   ", round(ks_stat * 100, 2), "%\n")
-
-  # ROC plot
-  plot(roc_obj,
-    main = "Scorecard ROC Curve",
-    print.auc = TRUE, print.thres = "best"
-  )
-} else {
-  message("Skipping validation - model not available.")
-}
-
-## ----preprocessing------------------------------------------------------------
-# Simulate feature with issues
+## ----preprocess-----------------------------------------------------------------------------------
 set.seed(2024)
-problematic <- c(
-  rnorm(800, 5000, 2000), # Normal values
-  rep(NA, 100), # Missing
-  runif(100, -10000, 50000) # Outliers
-)
+messy <- c(rnorm(800, 5000, 2000), rep(NA, 100), runif(100, -1e4, 5e4))
+y <- rbinom(1000, 1, 0.3)
 
-target_sim <- rbinom(1000, 1, 0.3)
-
-# Preprocess with IQR method
-preproc_result <- ob_preprocess(
-  feature = problematic,
-  target = target_sim,
-  outlier_method = "iqr",
+prep <- ob_preprocess(
+  feature         = messy,
+  target          = y,
+  outlier_method  = "iqr",
   outlier_process = TRUE,
-  preprocess = "both"
+  preprocess      = "both"
 )
 
-# View report
-print(preproc_result$report)
+prep$report
 
-# Compare distributions
-cat("\n\nBefore preprocessing:\n")
-cat("  Range:", range(problematic, na.rm = TRUE), "\n")
-cat("  Missing:", sum(is.na(problematic)), "\n")
-cat("  Mean:", round(mean(problematic, na.rm = TRUE), 2), "\n")
-
-cat("\nAfter preprocessing:\n")
-cleaned <- preproc_result$preprocess$feature_preprocessed
-cat("  Range:", range(cleaned), "\n")
-cat("  Missing:", sum(is.na(cleaned)), "\n")
-cat("  Mean:", round(mean(cleaned), 2), "\n")
-
-## ----production_save, eval=FALSE----------------------------------------------
-# # Add metadata to model
-# sc_binning$metadata <- list(
-#   creation_date = Sys.time(),
-#   creator = Sys.info()["user"],
-#   dataset_size = nrow(train_sc),
-#   default_rate = mean(train_sc$default == "bad"),
-#   r_version = R.version.string,
-#   package_version = packageVersion("OptimalBinningWoE")
-# )
-# 
-# # Save model
-# saveRDS(sc_binning, "credit_scorecard_v1_20250101.rds")
-# 
-# # Load model
-# loaded_model <- readRDS("credit_scorecard_v1_20250101.rds")
-
-## ----production_score, eval=FALSE---------------------------------------------
-# score_applications <- function(new_data, model_file) {
-#   # Load binning model
-#   binning_model <- readRDS(model_file)
-# 
-#   # Validate required features
-#   required_vars <- binning_model$summary$feature[
-#     !binning_model$summary$error
-#   ]
-# 
-#   missing_vars <- setdiff(required_vars, names(new_data))
-#   if (length(missing_vars) > 0) {
-#     stop("Missing features: ", paste(missing_vars, collapse = ", "))
-#   }
-# 
-#   # Apply WoE transformation
-#   scored <- obwoe_apply(new_data, binning_model, keep_original = TRUE)
-# 
-#   # Add timestamp
-#   scored$scoring_date <- Sys.Date()
-# 
-#   return(scored)
-# }
-# 
-# # Usage example
-# # new_apps <- read.csv("new_applications.csv")
-# # scored_apps <- score_applications(new_apps, "credit_scorecard_v1_20250101.rds")
-
-## ----pitfalls, eval=FALSE-----------------------------------------------------
-# # ❌ Don't bin on full dataset before splitting
-# # This causes data leakage!
-# bad_approach <- obwoe(full_data, target = "y")
-# train_woe <- obwoe_apply(train_data, bad_approach)
-# 
-# # ✅ Correct: Bin only on training data
-# good_approach <- obwoe(train_data, target = "y")
-# test_woe <- obwoe_apply(test_data, good_approach)
-# 
-# # ❌ Don't ignore IV thresholds
-# # IV > 0.50 likely indicates target leakage
-# suspicious_features <- result$summary$feature[
-#   result$summary$total_iv > 0.50
-# ]
-# 
-# # ❌ Don't over-bin
-# # Too many bins (>10) reduces interpretability
-# # and may cause overfitting
-
-## ----session_info-------------------------------------------------------------
+## ----session--------------------------------------------------------------------------------------
 sessionInfo()
 

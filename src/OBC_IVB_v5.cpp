@@ -11,7 +11,6 @@
 #include <unordered_map>
 #include <vector>
 
-using namespace Rcpp;
 
 // Include shared headers
 #include "common/bin_structures.h"
@@ -304,16 +303,41 @@ private:
   }
 
   // Ensure maximum number of pre-bins
+  //
+  // The excess categories are folded into the smallest of the retained ones.
+  // They used to be dropped instead: the vector was simply resized, which
+  // removed those categories' observations from the binning altogether. The
+  // loss was silent -- no warning, no error flag, and `converged` still true --
+  // and it is reachable whenever more than `max_n_prebins` categories survive
+  // merge_rare_categories(), which a bin_cutoff below 1/max_n_prebins allows.
+  //
+  // Folding rather than dropping keeps every observation represented, so the
+  // reported counts, WoE and IV describe the whole sample as they claim to.
+  // Which categories are kept as separate identities is unchanged: still the
+  // max_n_prebins most frequent.
   void ensure_max_prebins() {
-    if (static_cast<int>(category_stats.size()) > max_n_prebins) {
-      // Sort by count and keep only the max_n_prebins most frequent
-      std::partial_sort(category_stats.begin(),
-                        category_stats.begin() + max_n_prebins,
+    // max_n_prebins is not range-validated for this algorithm, so the number of
+    // bins to keep is floored at one; keeping zero would discard everything,
+    // which is the very failure this function exists to avoid.
+    const int keep = std::max(max_n_prebins, 1);
+    const int n_stats = static_cast<int>(category_stats.size());
+
+    if (n_stats > keep) {
+      // Sort by count and keep only the `keep` most frequent
+      std::partial_sort(category_stats.begin(), category_stats.begin() + keep,
                         category_stats.end(),
                         [](const CategoryStats &a, const CategoryStats &b) {
                           return a.count > b.count;
                         });
-      category_stats.resize(max_n_prebins);
+
+      // Fold the remainder into the smallest retained category. partial_sort
+      // orders the retained block by descending count, so that is the last one.
+      CategoryStats &absorber = category_stats[keep - 1];
+      for (int i = keep; i < n_stats; ++i) {
+        absorber.merge_with(category_stats[i], bin_separator);
+      }
+
+      category_stats.resize(keep);
     }
   }
 
@@ -329,12 +353,22 @@ private:
               });
   }
 
+  // Build the cumulative statistics cache if it does not exist yet.
+  // The cache is consumed unconditionally when the result is assembled, so it
+  // must also be available on the "few enough categories" fast path that skips
+  // the dynamic programming stage entirely.
+  void ensure_stats_cache() {
+    if (!stats_cache) {
+      stats_cache = std::make_shared<CumulativeStatsCache>(category_stats);
+    }
+  }
+
   // Initialize dynamic programming structures with optimized memory usage
   void initialize_dp_structures() {
     int n = static_cast<int>(category_stats.size());
 
     // Initialize caches for efficient calculations
-    stats_cache = std::make_shared<CumulativeStatsCache>(category_stats);
+    ensure_stats_cache();
     iv_cache = std::make_unique<IVCache>(n, stats_cache, n > 20);
 
     // Initialize DP tables with pre-allocation
@@ -644,6 +678,11 @@ public:
         max_bins = min_bins;
 
       std::vector<int> optimal_bins;
+
+      // The result assembly below reads from stats_cache on every path, so the
+      // cache must be built before branching (the fast path never runs
+      // initialize_dp_structures()). category_stats is final at this point.
+      ensure_stats_cache();
 
       // Special case: already have few enough bins
       if (ncat <= max_bins) {

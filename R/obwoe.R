@@ -21,6 +21,17 @@
 #' @param min_bins Integer specifying the minimum number of bins. Must satisfy
 #'   \eqn{2 \le} \code{min_bins} \eqn{\le} \code{max_bins}. Algorithms may
 #'   produce fewer bins if the data has insufficient unique values. Default is 2.
+#'
+#'   Read as a floor, but it frequently behaves as the binding constraint rather
+#'   than a safety net. Several algorithms stop merging as soon as their own
+#'   criterion is satisfied, which can be well before \code{max_bins}, so
+#'   \code{min_bins} ends up setting the partition. On the German Credit
+#'   \code{amount} variable with \code{max_bins = 5}, the default binning
+#'   returns two bins and an IV of 0.0016; requesting \code{min_bins = 4}
+#'   returns an IV of 0.0824 on the same data and the same algorithm. Raising it
+#'   is a legitimate way to ask for a finer partition, and worth trying when a
+#'   continuous predictor collapses to two bins under a larger
+#'   \code{max_bins}.
 #' @param max_bins Integer specifying the maximum number of bins. Controls the
 #'   granularity of discretization. Higher values capture more detail but risk
 #'   overfitting. Typical values range from 5 to 10 for credit scoring applications.
@@ -418,6 +429,17 @@ obwoe <- function(data,
     target_vec <- as.integer(raw_target)
   }
 
+  # [D2] The roxygen documentation states "Missing values in the target are
+  # not permitted", but this was never enforced: target-type detection just
+  # below silently drops NA via unique(target_vec[!is.na(target_vec)]), and
+  # every downstream binning call receives target_vec with the NAs intact.
+  if (anyNA(target_vec)) {
+    stop(sprintf(
+      "Target column '%s' contains missing values, which are not permitted.",
+      target
+    ))
+  }
+
   # Detect target type
   unique_targets <- sort(unique(target_vec[!is.na(target_vec)]))
   if (length(unique_targets) == 2 && all(unique_targets %in% c(0L, 1L))) {
@@ -470,7 +492,8 @@ obwoe <- function(data,
           feat_vec = feat_vec,
           min_bins = min_bins,
           max_bins = max_bins,
-          control = control
+          control = control,
+          target_type = target_type
         )
       },
       error = function(e) {
@@ -488,13 +511,30 @@ obwoe <- function(data,
     # Build summary row
     has_error <- !is.null(result$error)
 
-    # Calculate total_iv: use total_iv if present, otherwise sum iv vector
+    # Calculate total_iv, in decreasing order of preference:
+    #   1. the scalar `total_iv` the algorithm reported;
+    #   2. the per-bin `iv` vector (or, for multiclass, the bins x classes
+    #      matrix, whose total is the sum over every class);
+    #   3. a fallback recomputed from count_pos / count_neg, so that an
+    #      algorithm reporting neither field still gets a correct total.
     total_iv_val <- NA_real_
     if (!has_error) {
+      n_bin <- if (!is.null(result$bin)) length(result$bin) else NA_integer_
       if (!is.null(result$total_iv) && length(result$total_iv) == 1) {
         total_iv_val <- result$total_iv
-      } else if (!is.null(result$iv) && is.numeric(result$iv)) {
+      } else if (is.matrix(result$iv) && is.numeric(result$iv)) {
+        # Multiclass (e.g. jedi_mwoe) returns a bins x classes matrix. The
+        # intended scalar summary is the total across all classes; this branch
+        # makes that deliberate rather than a side effect of is.numeric()
+        # being TRUE for matrices.
         total_iv_val <- sum(result$iv, na.rm = TRUE)
+      } else if (!is.null(result$iv) && is.numeric(result$iv) &&
+        !is.na(n_bin) && length(result$iv) == n_bin) {
+        total_iv_val <- sum(result$iv, na.rm = TRUE)
+      } else if (is.numeric(result$count_pos) && is.numeric(result$count_neg) &&
+        length(result$count_pos) == length(result$count_neg) &&
+        length(result$count_pos) > 0L) {
+        total_iv_val <- .ob_iv_from_counts(result$count_pos, result$count_neg)
       }
     }
 
@@ -512,12 +552,23 @@ obwoe <- function(data,
   }
 
   # Build output
+  #
+  # [B-01] The fitted object records the configuration it was fitted with.
+  # Without it a saved model cannot say what separator, cut-off or bin limits
+  # produced it, so anything downstream that needs one has to guess -- which
+  # is why .ob_points_sql() and obwoe_apply() used to hard-code the separator.
+  # `call` is not a substitute: it captures only the arguments the caller
+  # typed, never the defaults that actually applied.
   out <- list(
     results = results,
     summary = summary_data,
     target = target,
     target_type = target_type,
     n_features = length(feature),
+    control = control,
+    min_bins = min_bins,
+    max_bins = max_bins,
+    algorithm = algorithm,
     call = call
   )
 
@@ -525,11 +576,69 @@ obwoe <- function(data,
   return(out)
 }
 
+#' Recompute a total Information Value from bin counts
+#'
+#' Last-resort fallback for algorithms that report neither a scalar
+#' \code{total_iv} nor a per-bin \code{iv} vector. Uses the standard definition
+#' \code{sum((dist_pos - dist_neg) * log(dist_pos / dist_neg))} with the same
+#' 0.5 pseudo-count smoothing the C++ engines apply, which also guards the
+#' zero-count bins that would otherwise produce infinite terms.
+#'
+#' @param count_pos Integer vector of per-bin event counts.
+#' @param count_neg Integer vector of per-bin non-event counts.
+#'
+#' @return A length-one numeric, or \code{NA_real_} when either class total is
+#'   zero (the IV is undefined then, and must not be reported as 0).
+#' @keywords internal
+#' @noRd
+.ob_iv_from_counts <- function(count_pos, count_neg) {
+  pos <- as.numeric(count_pos)
+  neg <- as.numeric(count_neg)
+  if (anyNA(pos) || anyNA(neg)) {
+    return(NA_real_)
+  }
+  total_pos <- sum(pos)
+  total_neg <- sum(neg)
+  # A degenerate target has no Information Value to report. Returning 0 here
+  # would assert "no predictive power" about something that was never
+  # measurable, so return NA instead.
+  if (!is.finite(total_pos) || !is.finite(total_neg) ||
+    total_pos <= 0 || total_neg <= 0) {
+    return(NA_real_)
+  }
+  k <- length(pos)
+  dist_pos <- (pos + 0.5) / (total_pos + k * 0.5)
+  dist_neg <- (neg + 0.5) / (total_neg + k * 0.5)
+  sum((dist_pos - dist_neg) * log(dist_pos / dist_neg))
+}
+
+#' Read the bin separator a model was fitted with
+#'
+#' @param obj An \code{obwoe} object.
+#' @param default Separator to assume when the object does not carry one.
+#'
+#' @details
+#' Objects fitted before 1.13.2 have no \code{control} element, so the default
+#' stands in for them. That keeps models saved by earlier versions readable
+#' instead of erroring on a missing field.
+#'
+#' @return A length-one character string.
+#' @keywords internal
+#' @noRd
+.ob_bin_separator <- function(obj, default = "%;%") {
+  sep <- obj$control$bin_separator
+  if (is.null(sep) || !is.character(sep) || length(sep) != 1L || is.na(sep)) {
+    return(default)
+  }
+  sep
+}
+
 
 #' @title Internal Algorithm Dispatcher
 #' @keywords internal
 .dispatch_algorithm <- function(feat_type, algorithm, target_vec, feat_vec,
-                                min_bins, max_bins, control) {
+                                min_bins, max_bins, control,
+                                target_type = "binary") {
   algo <- algorithm
 
   # Get algorithm registry
@@ -547,6 +656,16 @@ obwoe <- function(data,
   }
   if (feat_type == "categorical" && !info$categorical) {
     stop(sprintf("Algorithm '%s' does not support categorical features.", algo))
+  }
+  # [C-04/A-02] The registry also carries a $multinomial flag (only
+  # jedi/jedi_mwoe support a multiclass target), but it was never checked
+  # here. An explicitly-requested binary-only algorithm (e.g. algorithm =
+  # "mob") against a multinomial target used to be dispatched anyway,
+  # producing output the algorithm was never designed to interpret.
+  if (identical(target_type, "multinomial") && !isTRUE(info$multinomial)) {
+    stop(sprintf(
+      "Algorithm '%s' does not support a multinomial target.", algo
+    ))
   }
 
   # Prepare arguments
@@ -706,6 +825,35 @@ obwoe <- function(data,
 #' \strong{max_n_prebins}: Critical for categorical features with many levels.
 #' If a feature has 100 categories, setting \code{max_n_prebins = 20} will
 #' pre-merge similar categories into 20 groups before optimization.
+#'
+#' For \emph{numerical} features this parameter is a modelling decision, not an
+#' implementation detail, and the default of 20 is not neutral. Pre-binning runs
+#' before any algorithm sees the data, so a heavy-tailed variable whose signal
+#' sits in the upper tail can have that tail smeared across a single quantile
+#' cell and lost before optimization begins. The effect is silent: the fit
+#' reports \code{converged = TRUE} and no warning.
+#'
+#' Benchmarks on two open datasets (76,020 x 369 and 590,540 x 454, five-fold
+#' held-out IV, \code{min_bins} and \code{max_bins} held fixed) show the size
+#' of it. Raising \code{max_n_prebins} from 20 to 200 moved the median
+#' held-out IV of heavy-tailed numerical predictors by \strong{+129\%} and
+#' \strong{+39\%} respectively, while leaving discrete and categorical
+#' predictors untouched. The bin count barely moved, so this is the placement
+#' of cut points changing, not extra splits.
+#'
+#' It moves results in \strong{both} directions, which is why the default is
+#' left alone. On one of the two benchmarks, raising it improved the portfolio
+#' but cost 15\% of held-out IV on the twenty-five strongest predictors --
+#' exactly the ones a scorecard would keep -- while inflating IV on weak
+#' predictors no model would select. No cheap rule separated the two cases:
+#' gating on the tail ratio worked cleanly on one dataset and captured almost
+#' nothing on the other, and for roughly half of all predictors the default of
+#' 20 was already the best value tested.
+#'
+#' The practical advice is therefore per-variable rather than global: leave the
+#' default, and tune it against \emph{held-out} data for continuous predictors
+#' with a long tail. Tuning on in-sample IV will always favour more resolution
+#' and is not evidence of anything.
 #'
 #' \strong{convergence_threshold}: Trade-off between precision and speed.
 #' For exploratory analysis, \eqn{10^{-4}} is sufficient. For production
@@ -969,16 +1117,26 @@ summary.obwoe <- function(object, sort_by = "iv", decreasing = TRUE, ...) {
     ivs <- successful$total_iv
     bins <- successful$n_bins
 
+    # na.rm = TRUE is right for a partially-observed vector, but wrong when
+    # nothing was observed at all: it turns "IV was never measured" into
+    # sum = 0, mean = NaN and range = [Inf, -Inf], asserting "no predictive
+    # power" about features that simply have no IV recorded. Report NA instead.
+    has_iv <- any(is.finite(ivs))
+
     aggregate <- list(
       n_features = nrow(summ),
       n_successful = nrow(successful),
       n_errors = sum(summ$error),
-      total_iv_sum = sum(ivs, na.rm = TRUE),
-      mean_iv = mean(ivs, na.rm = TRUE),
-      median_iv = median(ivs, na.rm = TRUE),
-      sd_iv = sd(ivs, na.rm = TRUE),
-      mean_bins = mean(bins, na.rm = TRUE),
-      iv_range = c(min = min(ivs, na.rm = TRUE), max = max(ivs, na.rm = TRUE))
+      total_iv_sum = if (has_iv) sum(ivs, na.rm = TRUE) else NA_real_,
+      mean_iv = if (has_iv) mean(ivs, na.rm = TRUE) else NA_real_,
+      median_iv = if (has_iv) median(ivs, na.rm = TRUE) else NA_real_,
+      sd_iv = if (has_iv) sd(ivs, na.rm = TRUE) else NA_real_,
+      mean_bins = if (any(is.finite(bins))) mean(bins, na.rm = TRUE) else NA_real_,
+      iv_range = if (has_iv) {
+        c(min = min(ivs, na.rm = TRUE), max = max(ivs, na.rm = TRUE))
+      } else {
+        c(min = NA_real_, max = NA_real_)
+      }
     )
   } else {
     aggregate <- list(
@@ -1028,17 +1186,28 @@ print.summary.obwoe <- function(x, ...) {
   ))
 
   if (x$aggregate$n_successful > 0) {
-    cat(sprintf("  Total IV: %.4f\n", x$aggregate$total_iv_sum))
-    cat(sprintf(
-      "  Mean IV: %.4f (SD: %.4f)\n",
-      x$aggregate$mean_iv, x$aggregate$sd_iv
-    ))
-    cat(sprintf("  Median IV: %.4f\n", x$aggregate$median_iv))
-    cat(sprintf(
-      "  IV Range: [%.4f, %.4f]\n",
-      x$aggregate$iv_range["min"], x$aggregate$iv_range["max"]
-    ))
-    cat(sprintf("  Mean Bins: %.1f\n", x$aggregate$mean_bins))
+    if (is.na(x$aggregate$total_iv_sum)) {
+      cat("  Total IV: NA\n")
+      cat("  Note: no Information Value was reported for any feature, so the\n")
+      cat("        IV statistics are unavailable. This is not the same as an\n")
+      cat("        IV of zero -- nothing was measured.\n")
+    } else {
+      cat(sprintf("  Total IV: %.4f\n", x$aggregate$total_iv_sum))
+      cat(sprintf(
+        "  Mean IV: %.4f (SD: %.4f)\n",
+        x$aggregate$mean_iv, x$aggregate$sd_iv
+      ))
+      cat(sprintf("  Median IV: %.4f\n", x$aggregate$median_iv))
+      cat(sprintf(
+        "  IV Range: [%.4f, %.4f]\n",
+        x$aggregate$iv_range["min"], x$aggregate$iv_range["max"]
+      ))
+    }
+    if (is.na(x$aggregate$mean_bins)) {
+      cat("  Mean Bins: NA\n")
+    } else {
+      cat(sprintf("  Mean Bins: %.1f\n", x$aggregate$mean_bins))
+    }
   }
 
   # IV distribution
@@ -1167,6 +1336,17 @@ plot.obwoe <- function(x, type = c("iv", "woe", "bins"),
 
 #' @keywords internal
 .plot_iv_ranking <- function(summ, top_n, show_threshold, ...) {
+  # With no finite IV anywhere, max(..., na.rm = TRUE) is -Inf and barplot()
+  # dies on "need finite 'xlim' values". Say what is actually wrong instead.
+  if (!any(is.finite(summ$total_iv))) {
+    message(
+      "No finite Information Value is available for any feature, so the IV ",
+      "ranking cannot be plotted. Check summary(fit) for features that ",
+      "errored, or refit with an algorithm that reports IV."
+    )
+    return(invisible(NULL))
+  }
+
   # Sort by IV
   summ <- summ[order(summ$total_iv, decreasing = TRUE), ]
 
@@ -1383,7 +1563,11 @@ plot.obwoe <- function(x, type = c("iv", "woe", "bins"),
 #'   feature columns in the output. If \code{FALSE}, only bin and WoE columns
 #'   are returned.
 #' @param na_woe Numeric value to assign when an observation cannot be mapped
-#'   to a bin (e.g., new categories not seen during training). Default is 0.
+#'   to a bin (e.g., new categories not seen during training), \strong{and}
+#'   as the fallback for a missing (\code{NA}) categorical value when the
+#'   binner built no dedicated missing-value bin. Default is 0. When a
+#'   missing-value bin \emph{was} fitted (see Details), \code{NA} inputs get
+#'   that bin's WoE instead of \code{na_woe}.
 #'
 #' @return A \code{data.frame} containing:
 #' \describe{
@@ -1404,6 +1588,17 @@ plot.obwoe <- function(x, type = c("iv", "woe", "bins"),
 #' \strong{Categorical Features}:
 #' Categories are matched directly to bin labels. Categories not seen
 #' during training are assigned \code{NA} for bin and \code{na_woe} for WoE.
+#'
+#' A missing (\code{NA}) categorical value is routed to whichever fitted bin
+#' represents missing values, if the binner built one -- categorical
+#' algorithms (e.g. \code{\link{ob_categorical_jedi}}) map \code{NA} to the
+#' token \code{"NA"} before fitting, so a bin containing that token (alone or
+#' merged with other categories) is treated as the missing-value bin, exactly
+#' as \code{\link{obwoe_sql}}'s \code{null_to_na_bin = TRUE} default does for
+#' \code{IS NULL}. \code{na_woe} is used for \code{NA} only when no such bin
+#' exists. \strong{This changed in 1.13.1}: earlier versions always returned
+#' \code{na_woe} for \code{NA}, ignoring any fitted missing-value bin, which
+#' disagreed with the generated SQL.
 #' }
 #'
 #' \subsection{Production Deployment}{
@@ -1485,11 +1680,37 @@ obwoe_apply <- function(data,
     stop("'obj' must be an object of class 'obwoe' from obwoe().")
   }
 
+  # The separator the model was fitted with, falling back to the package
+  # default for objects saved before obwoe() started recording its control.
+  bin_separator <- .ob_bin_separator(obj)
+
   # Get successful features from the model
   successful <- obj$summary[!obj$summary$error, "feature"]
 
   if (length(successful) == 0) {
     stop("No successful binning results in 'obj'.")
+  }
+
+  # Multiclass models carry one WoE column per class, i.e. a bins x classes
+  # matrix. There is no single WoE column to attach to a row, and the machinery
+  # below assumes a vector: names(woe) <- bins pads a matrix with NA instead of
+  # erroring, and the lookup then linear-indexes the column-major matrix, which
+  # silently returns class 1's WoE for every row and discards the rest. Refuse
+  # rather than return a wrong answer.
+  is_multiclass <- identical(obj$target_type, "multinomial") ||
+    any(vapply(
+      obj$results[successful],
+      function(r) is.matrix(r$woe),
+      logical(1)
+    ))
+
+  if (is_multiclass) {
+    stop(
+      "Multiclass (multinomial) WoE cannot be applied with obwoe_apply(): ",
+      "each feature has one WoE value per class, not a single column. ",
+      "Use the per-class bins x classes matrix in obj$results[[feature]]$woe ",
+      "directly, and decide how to encode it for your model."
+    )
   }
 
   # Check which features are available in data
@@ -1624,28 +1845,55 @@ obwoe_apply <- function(data,
       cat_to_bin <- list()
       cat_to_woe <- list()
 
+      # [C-03] Value used for a MISSING (NA) categorical input: the fitted
+      # bin whose categories include one of the tokens the categorical
+      # wrappers use for missing values (e.g. ob_categorical_jedi() maps
+      # NA -> "NA" before fitting), mirroring the na_categories default in
+      # obwoe_sql() (c("NA", "Missing", "")). na_woe is only a fallback for
+      # a feature where the binner built no such bin. Before this fix,
+      # obwoe_apply() always returned na_woe for NA regardless of whether a
+      # missing-value bin was fitted, while obwoe_sql()'s default
+      # null_to_na_bin = TRUE routed IS NULL to that bin's WoE -- so R and
+      # the generated SQL scored the same missing value differently.
+      sql_na_categories <- c("NA", "Missing", "")
+      has_na_bin <- FALSE
+      na_bin_label <- NA_character_
+      na_bin_woe <- na_woe
+
       for (i in seq_along(bins)) {
         bin_label <- bins[i]
-        # Split by separator (%;%)
-        cats <- strsplit(bin_label, "%;%", fixed = TRUE)[[1]]
+        # Split by the separator the model was actually fitted with, which
+        # [B-01] now records; it was hard-coded to "%;%" before, so a model
+        # fitted through control.obwoe(bin_separator = ...) had its grouped
+        # categories silently left unmatched here and scored as na_woe. The
+        # binning engines join the original category strings with the
+        # separator and add no padding, so the split pieces are the
+        # categories byte for byte. They must NOT be trimmed: a category
+        # carrying leading or trailing whitespace would otherwise become
+        # unmatchable and fall back to 'na_woe' just as silently.
+        cats <- strsplit(bin_label, bin_separator, fixed = TRUE)[[1]]
         for (cat in cats) {
-          cat <- trimws(cat)
           cat_to_bin[[cat]] <- bin_label
           cat_to_woe[[cat]] <- woe[i]
+        }
+        if (!has_na_bin && any(cats %in% sql_na_categories)) {
+          has_na_bin <- TRUE
+          na_bin_label <- bin_label
+          na_bin_woe <- woe[i]
         }
       }
 
       # Map each observation
       mapped_bin <- sapply(feat_char, function(x) {
         if (is.na(x)) {
-          return(NA_character_)
+          return(if (has_na_bin) na_bin_label else NA_character_)
         }
         if (x %in% names(cat_to_bin)) cat_to_bin[[x]] else NA_character_
       }, USE.NAMES = FALSE)
 
       mapped_woe <- sapply(feat_char, function(x) {
         if (is.na(x)) {
-          return(na_woe)
+          return(na_bin_woe)
         }
         if (x %in% names(cat_to_woe)) cat_to_woe[[x]] else na_woe
       }, USE.NAMES = FALSE)
@@ -1695,10 +1943,15 @@ obwoe_apply <- function(data,
 #'   }
 #' @param sort_by Character string specifying sort order for bins:
 #'   \describe{
-#'     \item{\code{"woe"}}{Descending WoE (highest risk first) - default}
+#'     \item{\code{"id"}}{The algorithm's own internal bin order - default}
+#'     \item{\code{"woe"}}{Descending WoE (highest risk first)}
 #'     \item{\code{"event_rate"}}{Descending event rate}
-#'     \item{\code{"bin"}}{Alphabetical/natural order}
+#'     \item{\code{"bin"}}{The bins' natural (level) order if \code{obj} is a
+#'       factor column, alphabetical order of the bin labels otherwise}
 #'   }
+#'   \strong{Note:} the default is \code{"id"}, not \code{"woe"} -- kept as-is
+#'   in 1.13.1 to avoid changing existing callers' output; only this
+#'   documentation was wrong before.
 #' @param n_groups Integer. For continuous variables (e.g., scores), the number
 #'   of groups (deciles) to create. Default is \code{NULL} (use existing groups).
 #'   Set to 10 for standard decile analysis.
@@ -1919,6 +2172,16 @@ obwoe_gains <- function(obj,
     if (is.null(feature)) {
       # Default: Select the feature with the highest Total IV
       summ <- obj$summary[!obj$summary$error, ]
+      # which.max() on an all-NA column returns integer(0), which indexes to
+      # character(0) and only fails much later with an opaque
+      # "attempt to select less than one element in get1index" error.
+      if (nrow(summ) == 0L || !any(is.finite(summ$total_iv))) {
+        stop(
+          "Cannot pick a feature automatically: no successfully binned feature ",
+          "has a finite Information Value. Pass 'feature' explicitly, or check ",
+          "summary(obj) to see which features errored."
+        )
+      }
       feature <- summ$feature[which.max(summ$total_iv)]
     }
 
@@ -2026,6 +2289,14 @@ obwoe_gains <- function(obj,
         warning("Insufficient unique values to create groups. Treating as discrete.")
         group_vec <- as.character(group_vec)
       } else {
+        # If the grouping variable is itself the WoE (use_column == "woe"),
+        # capture its original numeric values before it gets replaced below
+        # by quantile-group labels ("G01", "G02", ...). Otherwise the
+        # sentinel string "woe" would survive regrouping and later be
+        # coerced with as.numeric(), producing NA WoE / zero IV.
+        if (identical(woe_source, "woe")) {
+          woe_source <- group_vec
+        }
         # Create ordered factor for quantiles
         group_vec <- cut(group_vec,
           breaks = breaks,
@@ -2044,6 +2315,13 @@ obwoe_gains <- function(obj,
       bins <- levels(group_vec)
       # Filter out unused levels to avoid rows with 0 counts
       bins <- bins[bins %in% unique(as.character(group_vec[!is.na(group_vec)]))]
+      # Keep 'bins' itself as a factor (not a plain character vector) so
+      # that .build_gains_table()'s is.factor(bins) branch actually
+      # triggers and orders rows by the original level order (e.g. the
+      # ascending numeric order cut() produces) instead of falling back
+      # to a lexicographic sort, where '[' (ASCII 91) sorts after '('
+      # (ASCII 40) and pushes a bin like "[-Inf,x]" to the last row.
+      bins <- factor(bins, levels = bins)
     } else {
       bins <- sort(unique(as.character(group_vec[!is.na(group_vec)])))
     }
@@ -2058,8 +2336,11 @@ obwoe_gains <- function(obj,
 
     # Resolve WoE per bin
     if (identical(woe_source, "woe")) {
-      # The grouping variable itself is the WoE (numeric)
-      woe <- as.numeric(bins)
+      # The grouping variable itself is the WoE (numeric). Go through
+      # as.character() first: if 'bins' is a factor (see above), a bare
+      # as.numeric() on a factor returns the integer level codes, not the
+      # numeric value the label represents.
+      woe <- as.numeric(as.character(bins))
     } else if (!is.null(woe_source) && is.numeric(woe_source)) {
       # Average the auxiliary WoE column
       woe <- as.vector(tapply(woe_source, f_bins, mean, na.rm = TRUE, default = 0))
@@ -2188,7 +2469,9 @@ obwoe_gains <- function(obj,
   # 4. Calculate Vectorized Metrics (Bin Level)
   # -------------------------------------------#
   df$count_pct <- df$count / total_n
-  df$neg_rate <- df$neg_count / df$count
+  # [D1] Same 0/0 guard pos_rate already has a few lines above: an empty
+  # bin (count == 0) otherwise divides 0/0 into NaN instead of a defined 0.
+  df$neg_rate <- ifelse(df$count > 0, df$neg_count / df$count, 0)
 
   # Distributions (Share of Total)
   df$pos_pct <- df$pos_count / total_pos # % of Total Events (Recall per bin)
@@ -2212,7 +2495,14 @@ obwoe_gains <- function(obj,
   df$ks <- abs(df$cum_pos_pct - df$cum_neg_pct)
 
   # Lift: Segment Event Rate / Overall Event Rate
-  df$lift <- ifelse(overall_rate > 0, df$pos_rate / overall_rate, 0)
+  # A plain `if`, not ifelse(): the test is a scalar, and ifelse() returns a
+  # result shaped like its test, so it collapsed the whole column to the lift
+  # of the first bin.
+  df$lift <- if (overall_rate > 0) {
+    df$pos_rate / overall_rate
+  } else {
+    rep(0, nrow(df))
+  }
 
   # Capture Rate (Cumulative % of Events)
   df$capture_rate <- df$cum_pos_pct
@@ -2277,9 +2567,12 @@ plot.obwoe_gains <- function(x, type = c("cumulative", "ks", "lift", "woe_iv"), 
   on.exit(par(old_par))
 
   if (type == "cumulative") {
-    # Cumulative capture curve
-    n <- nrow(gt)
-    cum_pct <- seq_len(n) / n
+    # Cumulative capture curve. The x-axis is "% Population", which must
+    # follow the actual (possibly unequal) size of each bin, not just its
+    # rank -- seq_len(n) / n silently assumes every bin holds the same
+    # share of the population, which is essentially never true. gt$count_pct
+    # already carries the real per-bin population share.
+    cum_pct <- cumsum(gt$count_pct)
 
     plot(cum_pct * 100, gt$cum_pos_pct * 100,
       type = "b", pch = 19, col = "#F44336",

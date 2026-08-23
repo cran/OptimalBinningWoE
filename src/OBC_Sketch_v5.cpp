@@ -13,7 +13,6 @@
 #include <unordered_set>
 #include <vector>
 
-using namespace Rcpp;
 
 // Include shared headers
 #include "common/bin_structures.h"
@@ -25,7 +24,12 @@ using namespace OptimalBinning;
 // Global constants
 static constexpr double NEG_INFINITY = -std::numeric_limits<double>::infinity();
 static constexpr double LAPLACE_ALPHA = 0.5;
-static constexpr const char *MISSING_VALUE = "N/A";
+// [D8] Standardized to "NA", matching every other categorical algorithm
+// (this file and OBC_JEDIMWoE_v5.cpp were the only two using "N/A"). The
+// R wrapper (R/obc_sketch.R) already converts NA to this token before the
+// vector reaches here, so this constant is normally unreachable, but is
+// kept in sync for any caller that invokes this .Call() target directly.
+static constexpr const char *MISSING_VALUE = "NA";
 
 // Utility functions
 namespace utils {
@@ -235,8 +239,8 @@ private:
   size_t sketch_depth;
   bool use_divergence;
 
-  int total_good;
-  int total_bad;
+  int total_neg;
+  int total_pos;
 
   std::vector<CategoricalBin> bins;
   std::unique_ptr<CountMinSketch> sketch;
@@ -297,8 +301,8 @@ private:
     sketch_pos = std::make_unique<CountMinSketch>(sketch_width, sketch_depth);
     sketch_neg = std::make_unique<CountMinSketch>(sketch_width, sketch_depth);
 
-    total_good = 0;
-    total_bad = 0;
+    total_neg = 0;
+    total_pos = 0;
 
     std::unordered_set<std::string> unique_categories;
 
@@ -311,10 +315,10 @@ private:
 
       if (is_positive) {
         sketch_pos->update(cat, 1);
-        total_bad++;
+        total_pos++;
       } else {
         sketch_neg->update(cat, 1);
-        total_good++;
+        total_neg++;
       }
     }
 
@@ -385,7 +389,7 @@ private:
           int combined_count = bins[i].count + bins[j].count;
           double size_penalty = 1.0 + std::log(1.0 + combined_count);
 
-          double div = bins[i].divergence_from(bins[j], total_good, total_bad) *
+          double div = bins[i].divergence_from(bins[j], total_pos, total_neg) *
                        size_penalty;
 
           if (div < min_divergence) {
@@ -405,7 +409,7 @@ private:
     int min_count = static_cast<int>(
         std::ceil(bin_cutoff * static_cast<double>(feature.size())));
     int min_count_pos = static_cast<int>(
-        std::ceil(bin_cutoff * static_cast<double>(total_bad)));
+        std::ceil(bin_cutoff * static_cast<double>(total_pos)));
 
     std::vector<size_t> low_freq_bins;
 
@@ -432,7 +436,7 @@ private:
         if (i == idx)
           continue;
 
-        double div = bins[idx].divergence_from(bins[i], total_good, total_bad);
+        double div = bins[idx].divergence_from(bins[i], total_pos, total_neg);
         if (div < min_divergence) {
           min_divergence = div;
           merge_idx = i;
@@ -463,7 +467,7 @@ private:
 
   void calculate_initial_woe() {
     for (auto &bin : bins) {
-      bin.calculate_metrics(total_good, total_bad);
+      bin.calculate_metrics(total_pos, total_neg);
     }
   }
 
@@ -554,7 +558,7 @@ private:
 
           if (use_divergence) {
             // Calculate divergence on-the-fly (no cache)
-            score = bins[i].divergence_from(bins[j], total_good, total_bad);
+            score = bins[i].divergence_from(bins[j], total_pos, total_neg);
           } else {
             // Calculate IV loss on-the-fly (no cache)
             score = std::fabs(bins[i].iv) + std::fabs(bins[j].iv);
@@ -611,7 +615,7 @@ private:
       std::swap(index1, index2);
 
     bins[index1].merge_with(bins[index2]);
-    bins[index1].calculate_metrics(total_good, total_bad);
+    bins[index1].calculate_metrics(total_pos, total_neg);
 
     bins.erase(bins.begin() + static_cast<std::ptrdiff_t>(index2));
 
@@ -640,11 +644,11 @@ private:
           ". Ratio: " + std::to_string(count_ratio));
     }
 
-    double pos_ratio = total_bad > 0 ? static_cast<double>(total_count_pos) /
-                                           static_cast<double>(total_bad)
+    double pos_ratio = total_pos > 0 ? static_cast<double>(total_count_pos) /
+                                           static_cast<double>(total_pos)
                                      : 0.0;
-    double neg_ratio = total_good > 0 ? static_cast<double>(total_count_neg) /
-                                            static_cast<double>(total_good)
+    double neg_ratio = total_neg > 0 ? static_cast<double>(total_count_neg) /
+                                            static_cast<double>(total_neg)
                                       : 0.0;
     if (pos_ratio < 0.95 || pos_ratio > 1.05 || neg_ratio < 0.95 ||
         neg_ratio > 1.05) {
@@ -652,9 +656,9 @@ private:
                     "binning due to sketch approximation. "
                     "Positives: " +
                     std::to_string(total_count_pos) + " vs " +
-                    std::to_string(total_bad) +
+                    std::to_string(total_pos) +
                     ", Negatives: " + std::to_string(total_count_neg) + " vs " +
-                    std::to_string(total_good));
+                    std::to_string(total_neg));
     }
   }
 
@@ -670,8 +674,8 @@ public:
         max_n_prebins(max_n_prebins_), bin_separator(std::move(bin_separator_)),
         convergence_threshold(convergence_threshold_),
         max_iterations(max_iterations_), sketch_width(sketch_width_),
-        sketch_depth(sketch_depth_), use_divergence(true), total_good(0),
-        total_bad(0) {
+        sketch_depth(sketch_depth_), use_divergence(true), total_neg(0),
+        total_pos(0) {
     bins.reserve(std::min(max_n_prebins_, 1000));
   }
 
@@ -721,6 +725,14 @@ public:
           if (static_cast<int>(bins.size()) <= max_bins) {
             break;
           }
+        }
+
+        // Leaving the loop because the bin-count target was reached is a valid
+        // stopping state, just like meeting the IV tolerance above. Only
+        // exhausting max_iterations leaves converged_flag == false.
+        if (iterations_done < max_iterations) {
+          converged_flag = converged_flag ||
+                           (static_cast<int>(bins.size()) <= max_bins);
         }
       }
 

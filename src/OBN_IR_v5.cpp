@@ -1,4 +1,4 @@
-// [[Rcpp::plugins(cpp17)]]
+// [[Rcpp::plugins(cpp11)]]
 // [[Rcpp::depends(Rcpp)]]
 
 #include <Rcpp.h>
@@ -22,7 +22,6 @@
  * applications where monotonicity is a desirable property.
  */
 
-using namespace Rcpp;
 
 // Include shared headers
 #include "common/optimal_binning_common.h"
@@ -283,8 +282,14 @@ private:
       bin_info.push_back(bin1);
       bin_info.push_back(bin2);
     }
+
+    // One bin per distinct value is an exact, final binning. It sets is_simple,
+    // which makes fit() skip applyIsotonicRegression() -- the only other place
+    // that sets this flag -- so without this line every 0/1 feature reported
+    // converged = FALSE despite a perfectly correct result.
+    converged = true;
   }
-  
+
   /**
    * Create regular bins for normal case (more than 2 unique values)
    * 
@@ -466,14 +471,24 @@ private:
    * Either split large bins or merge similar bins
    */
   void ensureMinMaxBins() {
-    // Add bins if below min_bins
+    // Add bins if below min_bins.
+    // splitLargestBin() is a silent no-op whenever no bin can actually be
+    // divided (every bin holds a single observation, or the candidate split
+    // point coincides with a boundary). Without a progress check this loop spun
+    // forever -- and with no R_CheckUserInterrupt() in it, the session could not
+    // even be interrupted -- for any feature whose distinct-value count is below
+    // min_bins. Stop as soon as a pass fails to add a bin.
     while (bin_info.size() < static_cast<size_t>(min_bins) && bin_info.size() > 1) {
+      size_t before = bin_info.size();
       splitLargestBin();
+      if (bin_info.size() == before) break;
     }
-    
-    // Merge bins if above max_bins
+
+    // Merge bins if above max_bins (same progress guard, for symmetry)
     while (bin_info.size() > static_cast<size_t>(max_bins)) {
+      size_t before = bin_info.size();
       mergeSimilarBins();
+      if (bin_info.size() == before) break;
     }
   }
   
@@ -670,7 +685,12 @@ private:
    */
   void applyIsotonicRegression() {
     int n = static_cast<int>(bin_info.size());
-    if (n <= 1) return;
+    if (n <= 1) {
+      // A single bin is trivially monotone: nothing to pool, and the result is
+      // final. That is a successful termination, not a failure to converge.
+      converged = true;
+      return;
+    }
     
     // Extract event rates and counts
     std::vector<double> y(n), w(n);
@@ -680,29 +700,47 @@ private:
       w[i] = static_cast<double>(bin_info[i].count);
     }
     
-    // Apply isotonic regression with PAV algorithm
-    std::vector<double> isotonic_y;
-    
+    // Apply isotonic regression with PAV algorithm, recording which bins the
+    // algorithm pooled together into each block.
+    std::vector<int> block_sizes;
+
     if (monotone_increasing) {
-      isotonic_y = isotonicRegressionPAV(y, w, true);
+      isotonicRegressionPAV(y, w, true, &block_sizes);
     } else {
-      // For decreasing, reverse input, apply PAV, then reverse output
+      // For decreasing, reverse input and apply increasing PAV; the blocks then
+      // come back in reverse order, so flip them to the original orientation.
       std::reverse(y.begin(), y.end());
       std::reverse(w.begin(), w.end());
-      isotonic_y = isotonicRegressionPAV(y, w, true);
-      std::reverse(isotonic_y.begin(), isotonic_y.end());
+      isotonicRegressionPAV(y, w, true, &block_sizes);
+      std::reverse(block_sizes.begin(), block_sizes.end());
     }
-    
-    // Update bin event rates
-    for (int i = 0; i < n; ++i) {
-      // bin_info[i].event_rate() assignment removed (calculated dynamically)
-      
-      // Recalculate counts to maintain consistency
-      int new_pos = static_cast<int>(std::round(isotonic_y[i] * bin_info[i].count));
-      bin_info[i].count_pos = std::max(0, std::min(new_pos, bin_info[i].count));
-      bin_info[i].count_neg = bin_info[i].count - bin_info[i].count_pos;
+
+    // Realise the pooling on the bins themselves.
+    //
+    // "Pool adjacent violators" means the violating bins form one block. With
+    // the bin counts as weights, the fitted rate of a block is by construction
+    // the weighted mean of its members' event rates, that is exactly
+    //     sum(count_pos) / sum(count)
+    // over the block. Merging the block's bins therefore reproduces the
+    // isotonic fit exactly, while count, count_pos and count_neg stay equal to
+    // what is actually observed between the reported cutpoints.
+    //
+    // Overwriting the counts with round(fitted_rate * count) instead -- as this
+    // routine used to do -- left count_pos and count_neg disagreeing with the
+    // data falling inside each interval, so every statistic derived from them
+    // (WoE, IV, KS, gains tables) described a distribution that does not exist,
+    // and the reported bins were not in fact monotonic in the observed rate.
+    // The block sizes sum to the number of bins by construction; the bounds
+    // checks keep an inconsistent list harmless rather than out of range.
+    size_t start = 0;
+    for (size_t b = 0; b < block_sizes.size() && start < bin_info.size(); ++b) {
+      size_t block = static_cast<size_t>(block_sizes[b]);
+      for (size_t k = 1; k < block && start + 1 < bin_info.size(); ++k) {
+        mergeBins(start, start + 1);
+      }
+      ++start;
     }
-    
+
     converged = true;
     iterations_run += 1;
   }
@@ -729,12 +767,17 @@ private:
    * @param y_input Original values to be isotonized
    * @param w_input Weights (typically bin counts)
    * @param increasing Whether monotonically increasing (true) or decreasing (false)
+   * @param block_sizes Optional output: how many input elements each final
+   *   block pooled, in order. The sizes sum to the input length. Callers use it
+   *   to apply the pooling to the underlying data rather than only to the
+   *   fitted values.
    * @return std::vector<double> Isotonic regression result (same length as input)
    */
   std::vector<double> isotonicRegressionPAV(
-      const std::vector<double>& y_input, 
-      const std::vector<double>& w_input, 
-      bool increasing = true) const {
+      const std::vector<double>& y_input,
+      const std::vector<double>& w_input,
+      bool increasing = true,
+      std::vector<int>* block_sizes = nullptr) const {
     
     int n = static_cast<int>(y_input.size());
     std::vector<double> y = y_input;
@@ -794,6 +837,12 @@ private:
       }
     }
     
+    // Report the block structure: active_set[0..n-1] holds the number of input
+    // elements pooled into each surviving block, in order.
+    if (block_sizes != nullptr) {
+      block_sizes->assign(active_set.begin(), active_set.begin() + n);
+    }
+
     // Expand solution to original size
     std::vector<double> result(y_input.size());
     int idx = 0;
@@ -802,7 +851,7 @@ private:
         result[idx++] = solution[i];
       }
     }
-    
+
     return result;
   }
   

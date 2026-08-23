@@ -240,6 +240,17 @@ private:
           break;
         }
 
+        // small_bin_indices was built before any merging, and every merge
+        // erases a bin, so an index taken later in the list can point past the
+        // end of the shrunken vector. Reading bins[idx] below would then be out
+        // of range -- undefined behaviour, which aborts under a checked
+        // standard library and silently reads foreign memory without one. The
+        // bin this index referred to has already been absorbed, so there is
+        // nothing left to merge and the entry is skipped.
+        if (idx >= bins.size()) {
+          continue;
+        }
+
         // Find best merge candidate based on similarity
         double best_similarity = -1.0;
         size_t best_candidate = 0;
@@ -714,6 +725,14 @@ public:
             static_cast<int>(best_bins.size()) <= max_bins &&
             static_cast<int>(best_bins.size()) >= min_bins) {
           bins = std::move(best_bins);
+        }
+
+        // Leaving the loop because the bin-count target was reached is a valid
+        // stopping state, just like meeting the IV tolerance above. Only
+        // exhausting max_iterations leaves converged_flag == false.
+        if (iterations_done < max_iterations) {
+          converged_flag = converged_flag ||
+                           (static_cast<int>(bins.size()) <= max_bins);
         }
       }
 

@@ -13,7 +13,6 @@
 #include <unordered_map>
 #include <vector>
 
-using namespace Rcpp;
 
 // Include shared headers
 #include "common/bin_structures.h"
@@ -29,10 +28,15 @@ using namespace OptimalBinning;
 /**
  * @brief Safe logarithm with underflow protection
  * @param x Input value
- * @param epsilon Minimum value before log (default: 1e-12)
+ * @param epsilon Minimum value before log (default: EPSILON, 1e-10)
  * @return log(max(x, epsilon))
+ *
+ * [D5] Was hardcoded to 1e-12, diverging from OptimalBinning::EPSILON
+ * (1e-10, common/optimal_binning_common.h) that most other algorithms'
+ * local safe_log() copies already use. Unified to EPSILON so this
+ * algorithm's WoE/IV underflow floor matches the rest of the package.
  */
-inline double safe_log(double x, double epsilon = 1e-12) {
+inline double safe_log(double x, double epsilon = EPSILON) {
   return std::log(std::max(x, epsilon));
 }
 
@@ -517,7 +521,24 @@ private:
           next_distinct++;
         }
 
-        // Skip if no distinct value found
+        // The records in [start, next_distinct) all carry the same value as the
+        // last record of the previous bin, so they belong to that bin. They used
+        // to be skipped outright: `start` jumped forward and the loop continued
+        // without ever creating a bin for them, silently dropping them from the
+        // result. On tied/discrete features that lost a large share of the data
+        // (26% on integer features, 40% on coarse ones in testing), and the
+        // reported WoE/IV were computed on the surviving subset only.
+        if (!bins.empty() && next_distinct > start) {
+          for (size_t i = start; i < next_distinct; ++i) {
+            if (sorted_data[i].second == 1) {
+              bins.back().count_pos++;
+            } else {
+              bins.back().count_neg++;
+            }
+            bins.back().count++;
+          }
+        }
+
         if (next_distinct >= total_records)
           break;
 
@@ -554,6 +575,13 @@ private:
 
       bins.push_back(std::move(bin));
       start = end;
+    }
+
+    // The tie-absorbing branch above can leave the loop through `break`, in
+    // which case the final bin still carries a finite upper bound. The last bin
+    // must always be open-ended so that no value can fall outside every bin.
+    if (!bins.empty()) {
+      bins.back().upper_bound = std::numeric_limits<double>::infinity();
     }
   }
 

@@ -7,7 +7,6 @@
 #include <string>
 #include <numeric>
 
-using namespace Rcpp;
 
 // Include shared headers
 #include "common/optimal_binning_common.h"
@@ -265,8 +264,12 @@ private:
       int tgt = clean_target[i];
       
       // Binary search for the correct bin:
-      // Find the first bin with upper boundary >= value
-      auto it = std::lower_bound(uppers.begin(), uppers.end(), val + EPSILON);
+      // Find the first bin with upper boundary >= value.
+      // The "+ EPSILON" that used to be added here turned the comparison into a
+      // strict one, so a value landing exactly on a bin's upper boundary was
+      // pushed into the NEXT bin -- i.e. [a, b) behaviour, contradicting both
+      // this comment and the emitted "(a;b]" labels.
+      auto it = std::lower_bound(uppers.begin(), uppers.end(), val);
       size_t idx = it - uppers.begin();
       
       // Count by target value
@@ -699,8 +702,15 @@ public:
         prev_total_div = total_div;
         iterations_run++;
       }
+
+      // Reaching the bin-count target is a successful stopping state, exactly
+      // like meeting the divergence tolerance above. Only exhausting
+      // max_iterations leaves converged == false. This also covers the
+      // few-unique-values path in prebinning(), which produces one bin per
+      // value and never enters the loop at all.
+      converged = converged || (bins.size() <= static_cast<size_t>(max_bins));
     }
-    
+
     // Step 5: Prepare output
     Rcpp::StringVector bin_labels;
     Rcpp::NumericVector woe_values;
@@ -709,7 +719,22 @@ public:
     Rcpp::IntegerVector counts_pos;
     Rcpp::IntegerVector counts_neg;
     Rcpp::NumericVector cutpoints;
-    
+    Rcpp::NumericVector iv_values;
+
+    // Standard Information Value, reported alongside the divergence measure.
+    // It is computed directly from the smoothed class distributions rather than
+    // from bin.woe, because the default bin_method "woe1" is Zeng's log-odds
+    // ln((pos+0.5)/(neg+0.5)), which differs from standard WoE by the constant
+    // ln(TP/TN); deriving IV from it would give a wrong value.
+    long iv_total_pos = 0;
+    long iv_total_neg = 0;
+    for (const auto &bin : bins) {
+      iv_total_pos += bin.count_pos;
+      iv_total_neg += bin.count_neg;
+    }
+    const double iv_pos_denom = static_cast<double>(iv_total_pos) + bins.size() * 0.5;
+    const double iv_neg_denom = static_cast<double>(iv_total_neg) + bins.size() * 0.5;
+
     for (const auto &bin : bins) {
       // Create readable bin labels with interval notation
       std::string lower_str = std::isinf(bin.lower_bound) ? "-Inf" : std::to_string(bin.lower_bound);
@@ -722,7 +747,13 @@ public:
       counts.push_back(bin.count_pos + bin.count_neg);
       counts_pos.push_back(bin.count_pos);
       counts_neg.push_back(bin.count_neg);
-      
+
+      // iv_bin = (dist_pos - dist_neg) * ln(dist_pos / dist_neg)
+      double iv_dist_pos = (bin.count_pos + 0.5) / iv_pos_denom;
+      double iv_dist_neg = (bin.count_neg + 0.5) / iv_neg_denom;
+      iv_values.push_back((iv_dist_pos - iv_dist_neg) *
+                          std::log(iv_dist_pos / iv_dist_neg));
+
       // Store cutpoints (excluding infinity)
       if (!std::isinf(bin.upper_bound)) {
         cutpoints.push_back(bin.upper_bound);
@@ -740,12 +771,19 @@ public:
     for (R_xlen_t i = 0; i < divergence_values.size(); i++) {
       total_divergence += divergence_values[i];
     }
-    
+
+    // Total standard Information Value
+    double total_iv = 0.0;
+    for (R_xlen_t i = 0; i < iv_values.size(); i++) {
+      total_iv += iv_values[i];
+    }
+
     // Return comprehensive results
     return Rcpp::List::create(
       Rcpp::Named("id") = ids,
       Rcpp::Named("bin") = bin_labels,
       Rcpp::Named("woe") = woe_values,
+      Rcpp::Named("iv") = iv_values,
       Rcpp::Named("divergence") = divergence_values,
       Rcpp::Named("count") = counts,
       Rcpp::Named("count_pos") = counts_pos,
@@ -754,6 +792,7 @@ public:
       Rcpp::Named("converged") = converged,
       Rcpp::Named("iterations") = iterations_run,
       Rcpp::Named("total_divergence") = total_divergence,
+      Rcpp::Named("total_iv") = total_iv,
       Rcpp::Named("bin_method") = bin_method,
       Rcpp::Named("divergence_method") = divergence_method
     );

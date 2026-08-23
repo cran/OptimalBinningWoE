@@ -13,12 +13,12 @@
 #include <numeric>
 #include <unordered_map>
 
-using namespace Rcpp;
 
 // Include shared headers
 #include "common/optimal_binning_common.h"
 #include "common/bin_structures.h"
 #include "common/entropy_utils.h"
+#include "common/monotonicity_utils.h"
 
 using namespace Rcpp;
 using namespace OptimalBinning;
@@ -125,7 +125,10 @@ private:
     
     // Model cost: Cost of encoding the model complexity (number of bins)
     // More bins = higher complexity = higher cost
-    double model_cost = std::log2(static_cast<double>(current_bins.size()) - 1.0);
+    // Guard against log2(0) when size == 1
+    double model_cost = (current_bins.size() > 1)
+      ? std::log2(static_cast<double>(current_bins.size() - 1))
+      : 0.0;
     
     // Data cost: Initial entropy of all data
     double data_cost = total_count * calculate_entropy(total_pos, total_neg);
@@ -233,42 +236,50 @@ private:
   
   /**
    * @brief Check if bins have monotonic WoE values
-   * 
-   * Monotonicity means that WoE values consistently increase (or decrease) across bins.
-   * This is often desired for interpretability and stability in credit scoring models.
-   * 
-   * @return bool True if WoE values are monotonically increasing
+   *
+   * Auto-detects trend direction via Welford slope and then verifies
+   * monotonicity in that direction. Fixes the earlier bug where only
+   * ascending direction was checked, causing unnecessary merges when the
+   * true relationship is negative.
+   *
+   * @return bool True if WoE values are monotonic in the detected direction
    */
   bool is_monotonic() const {
-    if (bins.empty()) return true;
-    
-    double prev_woe = bins[0].woe;
-    for (size_t i = 1; i < bins.size(); ++i) {
-      if (bins[i].woe < prev_woe) {
-        return false;
-      }
-      prev_woe = bins[i].woe;
-    }
-    return true;
+    if (bins.size() < 2) return true;
+
+    std::vector<double> woe_vals;
+    woe_vals.reserve(bins.size());
+    for (const auto& b : bins) woe_vals.push_back(b.woe);
+
+    MonotonicTrend trend = detect_monotonic_direction(woe_vals);
+    return OptimalBinning::is_monotonic(woe_vals, trend);
   }
   
   /**
    * @brief Enforce monotonicity by merging bins
-   * 
-   * If WoE values are not monotonically increasing, this function merges bins
-   * to achieve monotonicity, prioritizing minimal information loss.
+   *
+   * Detects the dominant trend direction first (ascending or descending) and
+   * then merges bins that violate it. Previously only ascending was enforced.
    */
   void enforce_monotonicity() {
-    if (bins.size() <= 1) return; // Nothing to enforce if 0 or 1 bin
-    
+    if (bins.size() <= 1) return;
+
+    // Detect direction once before the loop
+    std::vector<double> woe_vals;
+    woe_vals.reserve(bins.size());
+    for (const auto& b : bins) woe_vals.push_back(b.woe);
+    bool ascending = (detect_monotonic_direction(woe_vals) == MonotonicTrend::ASCENDING);
+
     bool monotonic = false;
     while (!monotonic && iterations_run < max_iterations) {
       iterations_run++;
       monotonic = true;
-      
+
       // Find and merge bin pairs that violate monotonicity
       for (size_t i = 1; i < bins.size(); ++i) {
-        if (bins[i].woe < bins[i - 1].woe) {
+        bool violation = ascending ? (bins[i].woe < bins[i - 1].woe)
+                                   : (bins[i].woe > bins[i - 1].woe);
+        if (violation) {
           // Determine which merge causes less information loss
           double iv_loss_left = bins[i-1].iv + bins[i].iv;
           
@@ -612,7 +623,11 @@ public:
     
     // Apply MDLP-based merging
     apply_mdl_merging();
-    
+
+    // Enforce the caller's bin budget: MDLP's own stopping rule does not
+    // guarantee bins.size() <= max_bins.
+    enforce_max_bins();
+
     // Handle rare bins
     merge_rare_bins();
     
@@ -817,23 +832,31 @@ public:
     int records_per_bin = std::max(1, static_cast<int>(sorted_data.size()) / max_n_prebins);
     
     // Create pre-bins by frequency
-    for (size_t i = 0; i < sorted_data.size(); i += records_per_bin) {
+    for (size_t i = 0; i < sorted_data.size(); ) {
       size_t end = std::min(i + records_per_bin, sorted_data.size());
-      
+
+      // Never split a run of tied values across two pre-bins. Otherwise the
+      // reported boundary sits in the middle of a group of identical
+      // observations, and the emitted counts cannot be reproduced from the
+      // reported cutpoints by any interval convention.
+      while (end < sorted_data.size() &&
+             sorted_data[end].first == sorted_data[end - 1].first) {
+        ++end;
+      }
+
       // Create new bin
       NumericalBin bin;
-      
-      // Set bin boundaries
-      if (i == 0) {
-        bin.lower_bound = -std::numeric_limits<double>::infinity();
-      } else {
-        bin.lower_bound = sorted_data[i].first;
-      }
-      
+
+      // Right-closed (lower, upper] bins, contiguous by construction.
+      bin.lower_bound = bins.empty()
+                            ? -std::numeric_limits<double>::infinity()
+                            : bins.back().upper_bound;
+
       if (end == sorted_data.size()) {
         bin.upper_bound = std::numeric_limits<double>::infinity();
       } else {
-        bin.upper_bound = sorted_data[end].first;
+        // last value belonging to this bin, not the first of the next one
+        bin.upper_bound = sorted_data[end - 1].first;
       }
       
       // Set bin statistics
@@ -851,10 +874,11 @@ public:
       
       // Calculate bin entropy
       bin.entropy = calculate_entropy(bin.count_pos, bin.count_neg);
-      
+
       bins.push_back(bin);
+      i = end;
     }
-    
+
     // Fix potential issues with bin boundaries
     fix_bin_boundaries();
   }
@@ -883,64 +907,117 @@ public:
   
   /**
    * @brief Apply MDLP-based merging
-   * 
-   * Iteratively merges bins to minimize the MDL cost
+   *
+   * Iteratively merges bins to minimize MDL cost.  Each candidate merge is
+   * evaluated by computing the MDL delta analytically — no full-vector copy
+   * is needed, reducing complexity from O(k² × k) to O(k²) per outer step.
    */
   void apply_mdl_merging() {
-    // Iterate until minimum bins reached or no more beneficial merges
     while (bins.size() > (size_t)min_bins && iterations_run < max_iterations) {
+      size_t k = bins.size();
       double current_mdl = calculate_mdl_cost(bins);
-      double best_mdl = current_mdl;
-      size_t best_merge_index = bins.size();
-      
-      // Try merging each adjacent pair of bins
-      for (size_t i = 0; i < bins.size() - 1; ++i) {
-        // Create temporary bins for this merge scenario
-        std::vector<NumericalBin> temp_bins = bins;
-        
-        // Merge bins i and i+1
-        NumericalBin& left = temp_bins[i];
-        NumericalBin& right = temp_bins[i + 1];
-        
-        left.upper_bound = right.upper_bound;
-        left.count += right.count;
-        left.count_pos += right.count_pos;
-        left.count_neg += right.count_neg;
-        
-        temp_bins.erase(temp_bins.begin() + i + 1);
-        
-        // Calculate MDL cost after this merge
-        double new_mdl = calculate_mdl_cost(temp_bins);
-        
-        // Keep track of best merge
-        if (new_mdl < best_mdl) {
-          best_mdl = new_mdl;
+      double best_delta = 0.0;   // only accept merges that reduce MDL
+      size_t best_merge_index = k; // sentinel
+
+      // Pre-compute current model_cost term once
+      double cur_model = (k > 1) ? std::log2(static_cast<double>(k - 1)) : 0.0;
+      double new_model = (k > 2) ? std::log2(static_cast<double>(k - 2)) : 0.0;
+      double model_delta = new_model - cur_model;
+
+      for (size_t i = 0; i < k - 1; ++i) {
+        const NumericalBin& b_i  = bins[i];
+        const NumericalBin& b_i1 = bins[i + 1];
+
+        int m_pos = b_i.count_pos + b_i1.count_pos;
+        int m_neg = b_i.count_neg + b_i1.count_neg;
+        int m_cnt = b_i.count    + b_i1.count;
+
+        // data_cost delta: merged bin contribution replaces two individual ones
+        double data_delta =
+          m_cnt   * calculate_entropy(m_pos,      m_neg)
+          - b_i.count  * calculate_entropy(b_i.count_pos,  b_i.count_neg)
+          - b_i1.count * calculate_entropy(b_i1.count_pos, b_i1.count_neg);
+
+        double delta = model_delta + data_delta;
+
+        if (delta < best_delta) {
+          best_delta = delta;
           best_merge_index = i;
         }
       }
-      
-      // If a beneficial merge was found, execute it
-      if (best_merge_index < bins.size()) {
+
+      if (best_merge_index < k) {
         merge_bins(best_merge_index);
       } else {
-        // No beneficial merge found, stop
         break;
       }
-      
-      // Stop if we've reached the maximum number of bins
+
       if (bins.size() <= (size_t)max_bins) {
         break;
       }
-      
+
       iterations_run++;
     }
-    
+
     if (iterations_run >= max_iterations) {
       converged = false;
       Rcpp::warning("MDL merging did not complete within %d iterations", max_iterations);
     }
   }
-  
+
+  /**
+   * @brief Enforce max_bins as a hard post-condition
+   *
+   * apply_mdl_merging() stops as soon as no candidate merge reduces the MDL
+   * cost, and that `break` fires before the bins.size() <= max_bins test, so
+   * the loop could leave far more bins than the caller asked for (18 against
+   * max_bins = 5 on a plain continuous feature). max_bins is a documented
+   * user-facing parameter and has to be honoured, so once MDLP's own stopping
+   * rule is done we keep merging by the algorithm's own criterion -- the pair
+   * with the smallest MDL delta, i.e. the least-cost merge -- until the cap is
+   * met. Beyond the MDL optimum every remaining delta is positive; we take the
+   * cheapest one each time, which is the standard way to impose a bin budget
+   * on an MDL partition.
+   *
+   * min_bins still wins: we never merge below it.
+   */
+  void enforce_max_bins() {
+    while (bins.size() > (size_t)max_bins && bins.size() > (size_t)min_bins &&
+           bins.size() > 1) {
+      size_t k = bins.size();
+
+      double cur_model = (k > 1) ? std::log2(static_cast<double>(k - 1)) : 0.0;
+      double new_model = (k > 2) ? std::log2(static_cast<double>(k - 2)) : 0.0;
+      double model_delta = new_model - cur_model;
+
+      double best_delta = std::numeric_limits<double>::infinity();
+      size_t best_merge_index = 0;
+
+      for (size_t i = 0; i < k - 1; ++i) {
+        const NumericalBin& b_i  = bins[i];
+        const NumericalBin& b_i1 = bins[i + 1];
+
+        int m_pos = b_i.count_pos + b_i1.count_pos;
+        int m_neg = b_i.count_neg + b_i1.count_neg;
+        int m_cnt = b_i.count    + b_i1.count;
+
+        double data_delta =
+          m_cnt   * calculate_entropy(m_pos,      m_neg)
+          - b_i.count  * calculate_entropy(b_i.count_pos,  b_i.count_neg)
+          - b_i1.count * calculate_entropy(b_i1.count_pos, b_i1.count_neg);
+
+        double delta = model_delta + data_delta;
+
+        if (delta < best_delta) {
+          best_delta = delta;
+          best_merge_index = i;
+        }
+      }
+
+      merge_bins(best_merge_index);
+    }
+  }
+
   /**
    * @brief Get the results of binning
    * 
@@ -972,15 +1049,15 @@ public:
       
       // Format bin label as interval
       if (bins[i].lower_bound == -std::numeric_limits<double>::infinity()) {
-        oss << "[-Inf";
+        oss << "(-Inf";
       } else {
-        oss << "[" << bins[i].lower_bound;
+        oss << "(" << bins[i].lower_bound;
       }
       oss << ";";
       if (bins[i].upper_bound == std::numeric_limits<double>::infinity()) {
-        oss << "+Inf)";
+        oss << "+Inf]";
       } else {
-        oss << bins[i].upper_bound << ")";
+        oss << bins[i].upper_bound << "]";
         cutpoints.push_back(bins[i].upper_bound);
       }
       
