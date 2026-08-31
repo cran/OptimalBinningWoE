@@ -1,7 +1,7 @@
-e5de373c8b821fa1792be37e60262e5c *DESCRIPTION
+b95d4922a90c2e9bc3652ac587576505 *DESCRIPTION
 b87e8069cb85982f27e5ab3920f909a3 *LICENSE
 903db4dbf36b05daf9e2a9812390a271 *NAMESPACE
-a860a8f95daa40e01d55cc0b137e3ba6 *NEWS.md
+64a3c257da1fe32b6e6734ba81e9e3dd *NEWS.md
 935a83a08add007cc1f53f9a5c1ee984 *R/RcppExports.R
 1a0a1b641e025f940b9e31a48bdd3f9e *R/ob_apply_woe_cat.R
 cbb0abee943c8087d628834e6e949ab1 *R/ob_apply_woe_num.R
@@ -64,13 +64,13 @@ ebda9016a08e7b38d49cedd42572d6dc *build/vignette.rds
 5ddcaa65f0bc8e0dfb9e177b8c472ec4 *inst/WORDLIST
 106959a45ca6cfea322aa66ca55dc18e *inst/doc/algorithms.R
 af861a309de8574c316ad6ad05de1524 *inst/doc/algorithms.Rmd
-9a05f40ae1d225733cf100082f8b7469 *inst/doc/algorithms.html
+9a163e1df54de77a99fcae8b632af120 *inst/doc/algorithms.html
 25f4312e059744306da5c74cc2ef8ca0 *inst/doc/industrial-pipeline.R
 84e88ec9f89872ff35e611168d8cde93 *inst/doc/industrial-pipeline.Rmd
-45fed95e91327197dcf261263976e56a *inst/doc/industrial-pipeline.html
+d12db190b8042a0b520ff56b8ef368af *inst/doc/industrial-pipeline.html
 a3b472d3e66d301fbb86d3d2c893e29e *inst/doc/introduction.R
 3747525f42a82a23a157cb3b634fefe1 *inst/doc/introduction.Rmd
-4cc9fb6f5af742cfa9adb867ceb1b137 *inst/doc/introduction.html
+92d7ad5982a3eaa705d3070a24527160 *inst/doc/introduction.html
 ffcb2285e13925a3cae8b76525c4af89 *inst/extdata/README.md
 da1cb15439154574d3325f00910e7b3c *inst/extdata/germancredit.csv.gz
 633d541037c94b67164e652482efa07a *inst/figures/obwoe.png
@@ -248,7 +248,7 @@ c07fc7f2fcbe730bfef62b919fad7547 *src/common/safe_math.h
 0d1a73b5312737b072f0816b183abfe7 *src/common/validation_utils.h
 7725c8d3da2c4538b4afc56ce202ad6c *src/common/woe_iv_utils.h
 96e07382f9dca399f8d0f69a3eab789b *tests/testthat.R
-5a685cb530a9d72723c5a4bd3639e6b3 *tests/testthat/helper-germancredit.R
+ddc46708b6b08b5060422e54e73f846c *tests/testthat/helper-germancredit.R
 9ab1ad0f39dcc05262d4852089ee1990 *tests/testthat/helper-test-data.R
 2799f59ed8a86118646ce3ebedea6ee9 *tests/testthat/test-audit-regressions.R
 08c7f62ae9e939b3f69880a2949f0a33 *tests/testthat/test-categorical-all.R
@@ -258,7 +258,7 @@ c07fc7f2fcbe730bfef62b919fad7547 *src/common/safe_math.h
 1b31ebdaeb395d24ce72f114a398cd79 *tests/testthat/test-obwoe-interface.R
 24c7af7a542ce6e7a7f8466bf20aa28c *tests/testthat/test-obwoe-scorecard.R
 1bece7b9fed538b4e7166742fa40329b *tests/testthat/test-obwoe-select.R
-4286adb8116932c376748d6a192a02c1 *tests/testthat/test-obwoe-sql.R
+a5764128f1b257489d1e809e6e96bf6e *tests/testthat/test-obwoe-sql.R
 3f4164702b273b2bd86c58f736c1f421 *tests/testthat/test-regression-audit.R
 9ca549a439a3637f4492ac56e2f62642 *tests/testthat/test-step-obwoe.R
 b3de60a839ff031a662363053c37e3e0 *tests/testthat/test-utilities.R
