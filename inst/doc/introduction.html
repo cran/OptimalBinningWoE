@@ -12,7 +12,7 @@
 
 <meta name="author" content="José Evandeilton Lopes" />
 
-<meta name="date" content="2026-08-31" />
+<meta name="date" content="2026-09-30" />
 
 <title>Optimal Binning and Weight of Evidence: A Practical Guide</title>
 
@@ -342,7 +342,7 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <h1 class="title toc-ignore">Optimal Binning and Weight of Evidence: A
 Practical Guide</h1>
 <h4 class="author">José Evandeilton Lopes</h4>
-<h4 class="date">2026-08-31</h4>
+<h4 class="date">2026-09-30</h4>
 
 
 <div id="TOC">
@@ -630,7 +630,7 @@ Numerical and categorical variables are routed automatically.</p>
 <span id="cb11-13"><a href="#cb11-13" tabindex="-1"></a><span class="co">#&gt;   credit_history: IV = 0.2908 (5 bins, jedi)</span></span>
 <span id="cb11-14"><a href="#cb11-14" tabindex="-1"></a><span class="co">#&gt;   duration: IV = 0.2727 (6 bins, jedi)</span></span>
 <span id="cb11-15"><a href="#cb11-15" tabindex="-1"></a><span class="co">#&gt;   savings: IV = 0.1946 (5 bins, jedi)</span></span>
-<span id="cb11-16"><a href="#cb11-16" tabindex="-1"></a><span class="co">#&gt;   purpose: IV = 0.1667 (6 bins, jedi)</span></span>
+<span id="cb11-16"><a href="#cb11-16" tabindex="-1"></a><span class="co">#&gt;   purpose: IV = 0.1544 (6 bins, jedi)</span></span>
 <span id="cb11-17"><a href="#cb11-17" tabindex="-1"></a><span class="co">#&gt;   ... and 15 more</span></span></code></pre></div>
 <div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a><span class="fu">summary</span>(model)</span>
 <span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a><span class="co">#&gt; Summary: Optimal Binning Weight of Evidence</span></span>
@@ -640,8 +640,8 @@ Numerical and categorical variables are routed automatically.</p>
 <span id="cb12-6"><a href="#cb12-6" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb12-7"><a href="#cb12-7" tabindex="-1"></a><span class="co">#&gt; Aggregate Statistics:</span></span>
 <span id="cb12-8"><a href="#cb12-8" tabindex="-1"></a><span class="co">#&gt;   Features: 20 total, 20 successful, 0 errors</span></span>
-<span id="cb12-9"><a href="#cb12-9" tabindex="-1"></a><span class="co">#&gt;   Total IV: 2.1900</span></span>
-<span id="cb12-10"><a href="#cb12-10" tabindex="-1"></a><span class="co">#&gt;   Mean IV: 0.1095 (SD: 0.1572)</span></span>
+<span id="cb12-9"><a href="#cb12-9" tabindex="-1"></a><span class="co">#&gt;   Total IV: 2.1777</span></span>
+<span id="cb12-10"><a href="#cb12-10" tabindex="-1"></a><span class="co">#&gt;   Mean IV: 0.1089 (SD: 0.1570)</span></span>
 <span id="cb12-11"><a href="#cb12-11" tabindex="-1"></a><span class="co">#&gt;   Median IV: 0.0509</span></span>
 <span id="cb12-12"><a href="#cb12-12" tabindex="-1"></a><span class="co">#&gt;   IV Range: [0.0000, 0.6640]</span></span>
 <span id="cb12-13"><a href="#cb12-13" tabindex="-1"></a><span class="co">#&gt;   Mean Bins: 3.6</span></span>
@@ -658,7 +658,7 @@ Numerical and categorical variables are routed automatically.</p>
 <span id="cb12-24"><a href="#cb12-24" tabindex="-1"></a><span class="co">#&gt;           credit_history categorical      5 2.908e-01       Medium</span></span>
 <span id="cb12-25"><a href="#cb12-25" tabindex="-1"></a><span class="co">#&gt;                 duration   numerical      6 2.727e-01       Medium</span></span>
 <span id="cb12-26"><a href="#cb12-26" tabindex="-1"></a><span class="co">#&gt;                  savings categorical      5 1.946e-01       Medium</span></span>
-<span id="cb12-27"><a href="#cb12-27" tabindex="-1"></a><span class="co">#&gt;                  purpose categorical      6 1.667e-01       Medium</span></span>
+<span id="cb12-27"><a href="#cb12-27" tabindex="-1"></a><span class="co">#&gt;                  purpose categorical      6 1.544e-01       Medium</span></span>
 <span id="cb12-28"><a href="#cb12-28" tabindex="-1"></a><span class="co">#&gt;                 property categorical      4 1.122e-01       Medium</span></span>
 <span id="cb12-29"><a href="#cb12-29" tabindex="-1"></a><span class="co">#&gt;                      age   numerical      5 8.868e-02         Weak</span></span>
 <span id="cb12-30"><a href="#cb12-30" tabindex="-1"></a><span class="co">#&gt;      employment_duration categorical      5 8.606e-02         Weak</span></span>
@@ -688,7 +688,7 @@ reason attached.</p>
 <span id="cb13-6"><a href="#cb13-6" tabindex="-1"></a><span class="co">#&gt;  1:          credit_history categorical      5  0.29323   Medium 0.18048 0.25361      TRUE</span></span>
 <span id="cb13-7"><a href="#cb13-7" tabindex="-1"></a><span class="co">#&gt;  2:                duration   numerical      6  0.27274   Medium 0.19000 0.26647      TRUE</span></span>
 <span id="cb13-8"><a href="#cb13-8" tabindex="-1"></a><span class="co">#&gt;  3:                 savings categorical      5  0.19601   Medium 0.18667 0.19826     FALSE</span></span>
-<span id="cb13-9"><a href="#cb13-9" tabindex="-1"></a><span class="co">#&gt;  4:                 purpose categorical      6  0.16760   Medium 0.17905 0.22114      TRUE</span></span>
+<span id="cb13-9"><a href="#cb13-9" tabindex="-1"></a><span class="co">#&gt;  4:                 purpose categorical      6  0.15528   Medium 0.17095 0.21354      TRUE</span></span>
 <span id="cb13-10"><a href="#cb13-10" tabindex="-1"></a><span class="co">#&gt;  5:                property categorical      4  0.11264   Medium 0.11714 0.17066      TRUE</span></span>
 <span id="cb13-11"><a href="#cb13-11" tabindex="-1"></a><span class="co">#&gt;  6:                     age   numerical      5  0.08868     Weak 0.13143 0.16225      TRUE</span></span>
 <span id="cb13-12"><a href="#cb13-12" tabindex="-1"></a><span class="co">#&gt;  7:     employment_duration categorical      5  0.08643     Weak 0.11952 0.16164      TRUE</span></span>
@@ -881,11 +881,16 @@ on next month’s file.</p>
 <div class="sourceCode" id="cb20"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" tabindex="-1"></a>scored <span class="ot">&lt;-</span> <span class="fu">obwoe_apply</span>(german, model, <span class="at">keep_original =</span> <span class="cn">FALSE</span>)</span>
 <span id="cb20-2"><a href="#cb20-2" tabindex="-1"></a><span class="fu">head</span>(scored[, <span class="fu">c</span>(<span class="st">&quot;default&quot;</span>, <span class="st">&quot;duration_bin&quot;</span>, <span class="st">&quot;duration_woe&quot;</span>,</span>
 <span id="cb20-3"><a href="#cb20-3" tabindex="-1"></a>                <span class="st">&quot;purpose_bin&quot;</span>, <span class="st">&quot;purpose_woe&quot;</span>)], <span class="dv">4</span>)</span>
-<span id="cb20-4"><a href="#cb20-4" tabindex="-1"></a><span class="co">#&gt;   default          duration_bin duration_woe                      purpose_bin purpose_woe</span></span>
-<span id="cb20-5"><a href="#cb20-5" tabindex="-1"></a><span class="co">#&gt; 1       0       (-Inf;7.000000]      -1.3122              domestic appliances    -0.41020</span></span>
-<span id="cb20-6"><a href="#cb20-6" tabindex="-1"></a><span class="co">#&gt; 2       1      (39.000000;+Inf]       0.9939              domestic appliances    -0.41020</span></span>
-<span id="cb20-7"><a href="#cb20-7" tabindex="-1"></a><span class="co">#&gt; 3       0 (10.000000;16.000000]      -0.3029 furniture/equipment%;%retraining     0.58243</span></span>
-<span id="cb20-8"><a href="#cb20-8" tabindex="-1"></a><span class="co">#&gt; 4       0      (39.000000;+Inf]       0.9939                 radio/television     0.09435</span></span></code></pre></div>
+<span id="cb20-4"><a href="#cb20-4" tabindex="-1"></a><span class="co">#&gt;   default          duration_bin duration_woe</span></span>
+<span id="cb20-5"><a href="#cb20-5" tabindex="-1"></a><span class="co">#&gt; 1       0       (-Inf;7.000000]      -1.3122</span></span>
+<span id="cb20-6"><a href="#cb20-6" tabindex="-1"></a><span class="co">#&gt; 2       1      (39.000000;+Inf]       0.9939</span></span>
+<span id="cb20-7"><a href="#cb20-7" tabindex="-1"></a><span class="co">#&gt; 3       0 (10.000000;16.000000]      -0.3029</span></span>
+<span id="cb20-8"><a href="#cb20-8" tabindex="-1"></a><span class="co">#&gt; 4       0      (39.000000;+Inf]       0.9939</span></span>
+<span id="cb20-9"><a href="#cb20-9" tabindex="-1"></a><span class="co">#&gt;                                                   purpose_bin purpose_woe</span></span>
+<span id="cb20-10"><a href="#cb20-10" tabindex="-1"></a><span class="co">#&gt; 1                                         domestic appliances    -0.41020</span></span>
+<span id="cb20-11"><a href="#cb20-11" tabindex="-1"></a><span class="co">#&gt; 2                                         domestic appliances    -0.41020</span></span>
+<span id="cb20-12"><a href="#cb20-12" tabindex="-1"></a><span class="co">#&gt; 3                                                  retraining     0.59956</span></span>
+<span id="cb20-13"><a href="#cb20-13" tabindex="-1"></a><span class="co">#&gt; 4 business%;%furniture/equipment%;%radio/television%;%repairs     0.08206</span></span></code></pre></div>
 <p>Values outside the training range fall into the extreme bins;
 categories never seen during training and <code>NA</code> receive
 <code>na_woe</code>, which defaults to 0 — the neutral value, since
@@ -899,16 +904,11 @@ average”.</p>
 <span id="cb21-6"><a href="#cb21-6" tabindex="-1"></a>  <span class="at">purpose  =</span> <span class="fu">c</span>(<span class="st">&quot;car (new)&quot;</span>, <span class="st">&quot;unseen category&quot;</span>, <span class="st">&quot;education&quot;</span>, <span class="cn">NA</span>)</span>
 <span id="cb21-7"><a href="#cb21-7" tabindex="-1"></a>)</span>
 <span id="cb21-8"><a href="#cb21-8" tabindex="-1"></a><span class="fu">obwoe_apply</span>(new_data, two, <span class="at">keep_original =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb21-9"><a href="#cb21-9" tabindex="-1"></a><span class="co">#&gt;   duration         duration_bin duration_woe         purpose                  purpose_bin</span></span>
-<span id="cb21-10"><a href="#cb21-10" tabindex="-1"></a><span class="co">#&gt; 1        4      (-Inf;7.000000]      -1.3122       car (new)                    car (new)</span></span>
-<span id="cb21-11"><a href="#cb21-11" tabindex="-1"></a><span class="co">#&gt; 2       10 (7.000000;10.000000]      -0.4520 unseen category                         &lt;NA&gt;</span></span>
-<span id="cb21-12"><a href="#cb21-12" tabindex="-1"></a><span class="co">#&gt; 3      200     (39.000000;+Inf]       0.9939       education others%;%repairs%;%education</span></span>
-<span id="cb21-13"><a href="#cb21-13" tabindex="-1"></a><span class="co">#&gt; 4       NA                 &lt;NA&gt;       0.0000            &lt;NA&gt;                         &lt;NA&gt;</span></span>
-<span id="cb21-14"><a href="#cb21-14" tabindex="-1"></a><span class="co">#&gt;   purpose_woe</span></span>
-<span id="cb21-15"><a href="#cb21-15" tabindex="-1"></a><span class="co">#&gt; 1      0.3575</span></span>
-<span id="cb21-16"><a href="#cb21-16" tabindex="-1"></a><span class="co">#&gt; 2      0.0000</span></span>
-<span id="cb21-17"><a href="#cb21-17" tabindex="-1"></a><span class="co">#&gt; 3      0.2315</span></span>
-<span id="cb21-18"><a href="#cb21-18" tabindex="-1"></a><span class="co">#&gt; 4      0.0000</span></span></code></pre></div>
+<span id="cb21-9"><a href="#cb21-9" tabindex="-1"></a><span class="co">#&gt;   duration         duration_bin duration_woe         purpose        purpose_bin purpose_woe</span></span>
+<span id="cb21-10"><a href="#cb21-10" tabindex="-1"></a><span class="co">#&gt; 1        4      (-Inf;7.000000]      -1.3122       car (new)          car (new)      0.3575</span></span>
+<span id="cb21-11"><a href="#cb21-11" tabindex="-1"></a><span class="co">#&gt; 2       10 (7.000000;10.000000]      -0.4520 unseen category               &lt;NA&gt;      0.0000</span></span>
+<span id="cb21-12"><a href="#cb21-12" tabindex="-1"></a><span class="co">#&gt; 3      200     (39.000000;+Inf]       0.9939       education others%;%education      0.2392</span></span>
+<span id="cb21-13"><a href="#cb21-13" tabindex="-1"></a><span class="co">#&gt; 4       NA                 &lt;NA&gt;       0.0000            &lt;NA&gt;               &lt;NA&gt;      0.0000</span></span></code></pre></div>
 <p>A WoE-transformed frame is exactly what a logistic regression
 wants:</p>
 <div class="sourceCode" id="cb22"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" tabindex="-1"></a>keep <span class="ot">&lt;-</span> sel<span class="sc">$</span>feature[sel<span class="sc">$</span>selected]</span>
@@ -918,12 +918,12 @@ wants:</p>
 <span id="cb22-5"><a href="#cb22-5" tabindex="-1"></a>glm_fit <span class="ot">&lt;-</span> <span class="fu">glm</span>(default <span class="sc">~</span> ., <span class="at">data =</span> train, <span class="at">family =</span> <span class="fu">binomial</span>())</span>
 <span id="cb22-6"><a href="#cb22-6" tabindex="-1"></a><span class="fu">round</span>(<span class="fu">head</span>(<span class="fu">coef</span>(<span class="fu">summary</span>(glm_fit)), <span class="dv">6</span>), <span class="dv">4</span>)</span>
 <span id="cb22-7"><a href="#cb22-7" tabindex="-1"></a><span class="co">#&gt;                    Estimate Std. Error z value Pr(&gt;|z|)</span></span>
-<span id="cb22-8"><a href="#cb22-8" tabindex="-1"></a><span class="co">#&gt; (Intercept)         -0.8522     0.0802 -10.630    0.000</span></span>
-<span id="cb22-9"><a href="#cb22-9" tabindex="-1"></a><span class="co">#&gt; credit_history_woe   0.8408     0.1520   5.532    0.000</span></span>
-<span id="cb22-10"><a href="#cb22-10" tabindex="-1"></a><span class="co">#&gt; duration_woe         0.9435     0.1661   5.682    0.000</span></span>
-<span id="cb22-11"><a href="#cb22-11" tabindex="-1"></a><span class="co">#&gt; savings_woe          0.9785     0.1917   5.104    0.000</span></span>
-<span id="cb22-12"><a href="#cb22-12" tabindex="-1"></a><span class="co">#&gt; purpose_woe          1.0711     0.1993   5.373    0.000</span></span>
-<span id="cb22-13"><a href="#cb22-13" tabindex="-1"></a><span class="co">#&gt; property_woe         0.5125     0.2715   1.888    0.059</span></span></code></pre></div>
+<span id="cb22-8"><a href="#cb22-8" tabindex="-1"></a><span class="co">#&gt; (Intercept)         -0.8534     0.0802 -10.642   0.0000</span></span>
+<span id="cb22-9"><a href="#cb22-9" tabindex="-1"></a><span class="co">#&gt; credit_history_woe   0.8256     0.1513   5.455   0.0000</span></span>
+<span id="cb22-10"><a href="#cb22-10" tabindex="-1"></a><span class="co">#&gt; duration_woe         0.9642     0.1666   5.789   0.0000</span></span>
+<span id="cb22-11"><a href="#cb22-11" tabindex="-1"></a><span class="co">#&gt; savings_woe          0.9823     0.1916   5.128   0.0000</span></span>
+<span id="cb22-12"><a href="#cb22-12" tabindex="-1"></a><span class="co">#&gt; purpose_woe          1.1243     0.2078   5.411   0.0000</span></span>
+<span id="cb22-13"><a href="#cb22-13" tabindex="-1"></a><span class="co">#&gt; property_woe         0.5197     0.2716   1.914   0.0557</span></span></code></pre></div>
 <p>Coefficients on WoE predictors should all come out positive: a WoE of
 <span class="math inline">\(+1\)</span> means one log-odds more risk, so
 a negative coefficient signals a variable fighting the rest of the
@@ -942,7 +942,7 @@ the scoring can run in the warehouse instead of in R.</p>
 <span id="cb23-7"><a href="#cb23-7" tabindex="-1"></a>)</span>
 <span id="cb23-8"><a href="#cb23-8" tabindex="-1"></a><span class="co">#&gt; -- ---------------------------------------------------------------</span></span>
 <span id="cb23-9"><a href="#cb23-9" tabindex="-1"></a><span class="co">#&gt; -- Weight of Evidence transformation</span></span>
-<span id="cb23-10"><a href="#cb23-10" tabindex="-1"></a><span class="co">#&gt; -- Generated by OptimalBinningWoE 1.13.5</span></span>
+<span id="cb23-10"><a href="#cb23-10" tabindex="-1"></a><span class="co">#&gt; -- Generated by OptimalBinningWoE 1.14.0</span></span>
 <span id="cb23-11"><a href="#cb23-11" tabindex="-1"></a><span class="co">#&gt; -- Algorithm(s): jedi</span></span>
 <span id="cb23-12"><a href="#cb23-12" tabindex="-1"></a><span class="co">#&gt; -- Dialect: postgres</span></span>
 <span id="cb23-13"><a href="#cb23-13" tabindex="-1"></a><span class="co">#&gt; -- Interval convention: (lower, upper]  -- upper bound inclusive</span></span>
@@ -950,7 +950,7 @@ the scoring can run in the warehouse instead of in R.</p>
 <span id="cb23-15"><a href="#cb23-15" tabindex="-1"></a><span class="co">#&gt; --</span></span>
 <span id="cb23-16"><a href="#cb23-16" tabindex="-1"></a><span class="co">#&gt; -- Variable                 Type          Bins        IV</span></span>
 <span id="cb23-17"><a href="#cb23-17" tabindex="-1"></a><span class="co">#&gt; --   duration               numerical        6   0.27274</span></span>
-<span id="cb23-18"><a href="#cb23-18" tabindex="-1"></a><span class="co">#&gt; --   purpose                categorical      6   0.16671</span></span>
+<span id="cb23-18"><a href="#cb23-18" tabindex="-1"></a><span class="co">#&gt; --   purpose                categorical      6   0.15442</span></span>
 <span id="cb23-19"><a href="#cb23-19" tabindex="-1"></a><span class="co">#&gt; -- ---------------------------------------------------------------</span></span>
 <span id="cb23-20"><a href="#cb23-20" tabindex="-1"></a><span class="co">#&gt; SELECT</span></span>
 <span id="cb23-21"><a href="#cb23-21" tabindex="-1"></a><span class="co">#&gt; application_id,</span></span>
@@ -966,12 +966,12 @@ the scoring can run in the warehouse instead of in R.</p>
 <span id="cb23-31"><a href="#cb23-31" tabindex="-1"></a><span class="co">#&gt; </span><span class="re">END</span><span class="co"> AS duration_woe,</span></span>
 <span id="cb23-32"><a href="#cb23-32" tabindex="-1"></a><span class="co">#&gt; CASE</span></span>
 <span id="cb23-33"><a href="#cb23-33" tabindex="-1"></a><span class="co">#&gt;     WHEN purpose IS NULL THEN 0</span></span>
-<span id="cb23-34"><a href="#cb23-34" tabindex="-1"></a><span class="co">#&gt;     WHEN purpose IN (&#39;business&#39;, &#39;car (used)&#39;) THEN -0.8019940993019</span></span>
+<span id="cb23-34"><a href="#cb23-34" tabindex="-1"></a><span class="co">#&gt;     WHEN purpose = &#39;car (used)&#39; THEN -0.7700640191789392</span></span>
 <span id="cb23-35"><a href="#cb23-35" tabindex="-1"></a><span class="co">#&gt;     WHEN purpose = &#39;domestic appliances&#39; THEN -0.4102018501730504</span></span>
-<span id="cb23-36"><a href="#cb23-36" tabindex="-1"></a><span class="co">#&gt;     WHEN purpose = &#39;radio/television&#39; THEN 0.094346647791107185</span></span>
-<span id="cb23-37"><a href="#cb23-37" tabindex="-1"></a><span class="co">#&gt;     WHEN purpose IN (&#39;others&#39;, &#39;repairs&#39;, &#39;education&#39;) THEN 0.23148312351021103</span></span>
+<span id="cb23-36"><a href="#cb23-36" tabindex="-1"></a><span class="co">#&gt;     WHEN purpose IN (&#39;business&#39;, &#39;furniture/equipment&#39;, &#39;radio/television&#39;, &#39;repairs&#39;) THEN 0.08205675680644628</span></span>
+<span id="cb23-37"><a href="#cb23-37" tabindex="-1"></a><span class="co">#&gt;     WHEN purpose IN (&#39;others&#39;, &#39;education&#39;) THEN 0.23924071923058887</span></span>
 <span id="cb23-38"><a href="#cb23-38" tabindex="-1"></a><span class="co">#&gt;     WHEN purpose = &#39;car (new)&#39; THEN 0.357522329106064</span></span>
-<span id="cb23-39"><a href="#cb23-39" tabindex="-1"></a><span class="co">#&gt;     WHEN purpose IN (&#39;furniture/equipment&#39;, &#39;retraining&#39;) THEN 0.5824252658391619</span></span>
+<span id="cb23-39"><a href="#cb23-39" tabindex="-1"></a><span class="co">#&gt;     WHEN purpose = &#39;retraining&#39; THEN 0.5995570781191829</span></span>
 <span id="cb23-40"><a href="#cb23-40" tabindex="-1"></a><span class="co">#&gt;     ELSE 0</span></span>
 <span id="cb23-41"><a href="#cb23-41" tabindex="-1"></a><span class="co">#&gt; </span><span class="re">END</span><span class="co"> AS purpose_woe</span></span>
 <span id="cb23-42"><a href="#cb23-42" tabindex="-1"></a><span class="co">#&gt; FROM risk.applications;</span></span></code></pre></div>
@@ -1014,11 +1014,11 @@ binning before it starts: missing values and extreme outliers.</p>
 <span id="cb25-12"><a href="#cb25-12" tabindex="-1"></a></span>
 <span id="cb25-13"><a href="#cb25-13" tabindex="-1"></a>prep<span class="sc">$</span>report</span>
 <span id="cb25-14"><a href="#cb25-14" tabindex="-1"></a><span class="co">#&gt;   variable_type missing_count outlier_count</span></span>
-<span id="cb25-15"><a href="#cb25-15" tabindex="-1"></a><span class="co">#&gt; 1       numeric           100            73</span></span>
+<span id="cb25-15"><a href="#cb25-15" tabindex="-1"></a><span class="co">#&gt; 1       numeric           100            84</span></span>
 <span id="cb25-16"><a href="#cb25-16" tabindex="-1"></a><span class="co">#&gt;                                                                                                       original_stats</span></span>
 <span id="cb25-17"><a href="#cb25-17" tabindex="-1"></a><span class="co">#&gt; 1 { min: -8995.151324, Q1: 3697.784305, median: 5113.928039, mean: 6625.179803, Q3: 6705.149551, max: 49477.654407 }</span></span>
-<span id="cb25-18"><a href="#cb25-18" tabindex="-1"></a><span class="co">#&gt;                                                                                                   preprocessed_stats</span></span>
-<span id="cb25-19"><a href="#cb25-19" tabindex="-1"></a><span class="co">#&gt; 1 { min: -2161.216958, Q1: 3042.732437, median: 4792.608602, mean: 4703.116058, Q3: 6517.601547, max: 11703.913644 }</span></span></code></pre></div>
+<span id="cb25-18"><a href="#cb25-18" tabindex="-1"></a><span class="co">#&gt;                                                                                                  preprocessed_stats</span></span>
+<span id="cb25-19"><a href="#cb25-19" tabindex="-1"></a><span class="co">#&gt; 1 { min: -999.000000, Q1: 3042.732437, median: 4792.608602, mean: 4694.288173, Q3: 6517.601547, max: 11213.709465 }</span></span></code></pre></div>
 <p>The cleaned vector is in
 <code>prep$preprocess$feature_preprocessed</code> and goes straight into
 <code>obwoe()</code>. Missing values become a sentinel that the binner
@@ -1054,7 +1054,7 @@ Machine Learning Repository.</p>
 <div class="sourceCode" id="cb26"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb26-1"><a href="#cb26-1" tabindex="-1"></a><span class="fu">sessionInfo</span>()</span>
 <span id="cb26-2"><a href="#cb26-2" tabindex="-1"></a><span class="co">#&gt; R version 4.6.1 (2026-06-24)</span></span>
 <span id="cb26-3"><a href="#cb26-3" tabindex="-1"></a><span class="co">#&gt; Platform: x86_64-pc-linux-gnu</span></span>
-<span id="cb26-4"><a href="#cb26-4" tabindex="-1"></a><span class="co">#&gt; Running under: Ubuntu 26.04 LTS</span></span>
+<span id="cb26-4"><a href="#cb26-4" tabindex="-1"></a><span class="co">#&gt; Running under: Ubuntu 26.04.1 LTS</span></span>
 <span id="cb26-5"><a href="#cb26-5" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb26-6"><a href="#cb26-6" tabindex="-1"></a><span class="co">#&gt; Matrix products: default</span></span>
 <span id="cb26-7"><a href="#cb26-7" tabindex="-1"></a><span class="co">#&gt; BLAS:   /usr/lib/x86_64-linux-gnu/openblas-pthread/libblas.so.3 </span></span>
@@ -1073,7 +1073,7 @@ Machine Learning Repository.</p>
 <span id="cb26-20"><a href="#cb26-20" tabindex="-1"></a><span class="co">#&gt; [1] stats     graphics  grDevices utils     datasets  methods   base     </span></span>
 <span id="cb26-21"><a href="#cb26-21" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb26-22"><a href="#cb26-22" tabindex="-1"></a><span class="co">#&gt; other attached packages:</span></span>
-<span id="cb26-23"><a href="#cb26-23" tabindex="-1"></a><span class="co">#&gt; [1] recipes_1.3.3            dplyr_1.2.1              OptimalBinningWoE_1.13.5</span></span>
+<span id="cb26-23"><a href="#cb26-23" tabindex="-1"></a><span class="co">#&gt; [1] recipes_1.3.3            dplyr_1.2.1              OptimalBinningWoE_1.14.0</span></span>
 <span id="cb26-24"><a href="#cb26-24" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb26-25"><a href="#cb26-25" tabindex="-1"></a><span class="co">#&gt; loaded via a namespace (and not attached):</span></span>
 <span id="cb26-26"><a href="#cb26-26" tabindex="-1"></a><span class="co">#&gt;  [1] utf8_1.2.6          future_1.75.0       sass_0.4.10         generics_0.1.4     </span></span>

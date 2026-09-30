@@ -98,6 +98,33 @@
     tbl <- x$points[x$points$variable == feat, , drop = FALSE]
     tbl <- tbl[order(tbl$bin_id), , drop = FALSE]
     k <- nrow(tbl)
+    values <- .ob_sql_num(tbl$points)
+
+    # A value in no fitted bin scores this variable's na_woe fallback, read
+    # from the points table itself so that SQL and R cannot drift apart.
+    neutral <- unname(attr(x$points, "points_na")[[feat]])
+    null_value <- .ob_sql_num(neutral)
+
+    # NULL scores the points of the missing-value bin when the binner built
+    # one, exactly as the R card score does: obwoe_apply() routes a missing
+    # value to that bin (categorical: the first bin holding "NA", "Missing"
+    # or ""; numerical: a trailing "NA" bin). The neutral points were
+    # returned before, so the deployed SQL and predict(type = "card")
+    # disagreed on every missing value of such a variable.
+    if (identical(spec$type, "numerical")) {
+      num_na <- .ob_numeric_na_bin(tbl$bin, spec$cutpoints)
+      if (!is.na(num_na)) {
+        null_value <- values[num_na]
+        values <- values[-num_na]
+        k <- k - 1L
+      }
+    } else {
+      hit <- which(vapply(
+        .ob_split_categories(tbl$bin, bin_sep),
+        function(p) any(p %in% c("NA", "Missing", "")), logical(1)
+      ))
+      if (length(hit) > 0L) null_value <- values[hit[1L]]
+    }
 
     if (identical(spec$type, "numerical")) {
       cp <- spec$cutpoints
@@ -115,16 +142,12 @@
       spec$cutpoints <- cp
     }
 
-    # A value in no fitted bin scores this variable's na_woe fallback, read
-    # from the points table itself so that SQL and R cannot drift apart.
-    neutral <- unname(attr(x$points, "points_na")[[feat]])
-
     expr <- .ob_sql_case(
       spec = spec, feature = feat,
       col = .ob_sql_ident(feat, d, "auto"), d = d,
-      values = .ob_sql_num(tbl$points),
+      values = values,
       else_value = .ob_sql_num(neutral),
-      null_value = .ob_sql_num(neutral),
+      null_value = null_value,
       explicit_bounds = TRUE, indent = "    ",
       # NOTE: "%;%" is hardcoded here, same as obwoe_sql()'s own default
       # (R/obwoe_sql.R) that R/obwoe_report.R's "10_SQL_WoE" sheet inherits a
@@ -335,6 +358,10 @@ obwoe_report <- function(x,
   }
   if (is.null(control)) control <- control.obwoe_scorecard()
   digits <- control$digits
+  # Refuse before the workbook is assembled, not after all of it was built.
+  if (file.exists(file) && !isTRUE(control$overwrite)) {
+    stop(sprintf("'%s' exists and overwrite is FALSE.", file))
+  }
 
   wb <- openxlsx::createWorkbook()
 
@@ -461,7 +488,7 @@ obwoe_report <- function(x,
     s <- x$samples[[nm]]
     g <- s$gains
     g$sample <- nm
-    g$mean_score <- NA_real_
+    g$mean_score <- .ob_band_mean_score(s$score, g, x)
     g[, c("sample", setdiff(names(g), "sample")), drop = FALSE]
   })
   .ob_xlsx_sheet(wb, "07_Score_Gains",
@@ -540,9 +567,6 @@ obwoe_report <- function(x,
   )
   .ob_xlsx_sheet(wb, "12_Reproducibility", repro, digits, widths = c(24, 120))
 
-  if (file.exists(file) && !isTRUE(control$overwrite)) {
-    stop(sprintf("'%s' exists and overwrite is FALSE.", file))
-  }
   openxlsx::saveWorkbook(wb, file, overwrite = TRUE)
   invisible(file)
 }
@@ -555,4 +579,30 @@ obwoe_report <- function(x,
     sql = strsplit(sql, "\n", fixed = TRUE)[[1L]],
     stringsAsFactors = FALSE
   )
+}
+
+#' @keywords internal
+#' @title Internal: Mean Score per Frozen Band
+#' @description
+#' Mean of the continuous score inside each band of the 07_Score_Gains sheet.
+#' Bands are the ones frozen on the training sample (`x$band_breaks`, or
+#' recomputed from the training score for objects fitted before 1.13.6), and
+#' rows are matched by band label so a mismatch yields `NA`, never a shifted
+#' number.
+#' @keywords internal
+.ob_band_mean_score <- function(score, g, x) {
+  out <- rep(NA_real_, nrow(g))
+  if (is.null(score) || !length(score) || !"bin" %in% names(g)) return(out)
+  breaks <- x$band_breaks
+  if (is.null(breaks)) {
+    ref <- if (!is.null(x$samples$train$score)) x$samples$train$score else score
+    n_groups <- if (is.null(x$control$n_groups)) 10L else x$control$n_groups
+    breaks <- .ob_score_breaks(ref, n_groups)
+  }
+  band <- cut(score, breaks = breaks, include.lowest = TRUE)
+  m <- tapply(score, band, mean)
+  hit <- match(as.character(g$bin), names(m))
+  ok <- !is.na(hit)
+  out[ok] <- as.numeric(m[hit[ok]])
+  out
 }

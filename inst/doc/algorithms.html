@@ -12,7 +12,7 @@
 
 <meta name="author" content="José Evandeilton Lopes" />
 
-<meta name="date" content="2026-08-31" />
+<meta name="date" content="2026-09-30" />
 
 <title>Algorithm Reference: the 37 Binning Engines</title>
 
@@ -342,7 +342,7 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <h1 class="title toc-ignore">Algorithm Reference: the 37 Binning
 Engines</h1>
 <h4 class="author">José Evandeilton Lopes</h4>
-<h4 class="date">2026-08-31</h4>
+<h4 class="date">2026-09-30</h4>
 
 
 <div id="TOC">
@@ -439,7 +439,7 @@ understands:</p>
 <span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a>fit<span class="sc">$</span>summary[, <span class="fu">c</span>(<span class="st">&quot;feature&quot;</span>, <span class="st">&quot;type&quot;</span>, <span class="st">&quot;algorithm&quot;</span>, <span class="st">&quot;n_bins&quot;</span>, <span class="st">&quot;total_iv&quot;</span>)]</span>
 <span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a><span class="co">#&gt;    feature        type algorithm n_bins total_iv</span></span>
 <span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a><span class="co">#&gt; 1 duration   numerical      jedi      5   0.2474</span></span>
-<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a><span class="co">#&gt; 2  purpose categorical      jedi      5   0.1653</span></span></code></pre></div>
+<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a><span class="co">#&gt; 2  purpose categorical      jedi      5   0.1533</span></span></code></pre></div>
 <p><strong>Or by calling the engine directly</strong>, which returns a
 plain list for one feature:</p>
 <div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>direct <span class="ot">&lt;-</span> <span class="fu">ob_numerical_jedi</span>(<span class="at">target =</span> gc_data<span class="sc">$</span>target,</span>
@@ -1061,44 +1061,54 @@ constraints:</p>
 <td align="right">0.4947</td>
 </tr>
 <tr class="even">
+<td align="left">udt</td>
+<td align="right">5</td>
+<td align="right">0.2781</td>
+</tr>
+<tr class="odd">
 <td align="left">ewb</td>
 <td align="right">5</td>
 <td align="right">0.2747</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td align="left">ubsd</td>
 <td align="right">5</td>
 <td align="right">0.2680</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td align="left">lpdb</td>
 <td align="right">5</td>
-<td align="right">0.2635</td>
+<td align="right">0.2626</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td align="left">dp</td>
 <td align="right">5</td>
 <td align="right">0.2568</td>
 </tr>
-<tr class="even">
-<td align="left">udt</td>
-<td align="right">5</td>
-<td align="right">0.2546</td>
-</tr>
 <tr class="odd">
+<td align="left">mblp</td>
+<td align="right">5</td>
+<td align="right">0.2537</td>
+</tr>
+<tr class="even">
 <td align="left">fetb</td>
 <td align="right">5</td>
 <td align="right">0.2531</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td align="left">mob</td>
 <td align="right">5</td>
 <td align="right">0.2531</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td align="left">mrblp</td>
 <td align="right">5</td>
 <td align="right">0.2531</td>
+</tr>
+<tr class="odd">
+<td align="left">cm</td>
+<td align="right">4</td>
+<td align="right">0.2487</td>
 </tr>
 <tr class="even">
 <td align="left">jedi</td>
@@ -1131,19 +1141,9 @@ constraints:</p>
 <td align="right">0.2281</td>
 </tr>
 <tr class="even">
-<td align="left">cm</td>
-<td align="right">5</td>
-<td align="right">0.2237</td>
-</tr>
-<tr class="odd">
 <td align="left">sketch</td>
 <td align="right">4</td>
 <td align="right">0.2134</td>
-</tr>
-<tr class="even">
-<td align="left">mblp</td>
-<td align="right">4</td>
-<td align="right">0.1961</td>
 </tr>
 <tr class="odd">
 <td align="left">mdlp</td>
@@ -1151,14 +1151,14 @@ constraints:</p>
 <td align="right">0.1910</td>
 </tr>
 <tr class="even">
+<td align="left">ldb</td>
+<td align="right">4</td>
+<td align="right">0.1807</td>
+</tr>
+<tr class="odd">
 <td align="left">fast_mdlp</td>
 <td align="right">2</td>
 <td align="right">0.1556</td>
-</tr>
-<tr class="odd">
-<td align="left">ldb</td>
-<td align="right">2</td>
-<td align="right">0.0923</td>
 </tr>
 </tbody>
 </table>
@@ -1176,49 +1176,59 @@ constraints:</p>
 </thead>
 <tbody>
 <tr class="odd">
+<td align="left">mob</td>
+<td align="right">5</td>
+<td align="right">0.1656</td>
+</tr>
+<tr class="even">
 <td align="left">gmb</td>
 <td align="right">5</td>
 <td align="right">0.1656</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td align="left">mba</td>
 <td align="right">5</td>
 <td align="right">0.1656</td>
 </tr>
-<tr class="odd">
-<td align="left">jedi</td>
+<tr class="even">
+<td align="left">milp</td>
 <td align="right">5</td>
-<td align="right">0.1653</td>
+<td align="right">0.1656</td>
+</tr>
+<tr class="odd">
+<td align="left">sab</td>
+<td align="right">5</td>
+<td align="right">0.1656</td>
 </tr>
 <tr class="even">
-<td align="left">cm</td>
-<td align="right">5</td>
-<td align="right">0.1645</td>
-</tr>
-<tr class="odd">
 <td align="left">sblp</td>
 <td align="right">5</td>
 <td align="right">0.1629</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td align="left">dmiv</td>
 <td align="right">5</td>
 <td align="right">0.1549</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td align="left">dp</td>
 <td align="right">5</td>
 <td align="right">0.1533</td>
 </tr>
-<tr class="even">
-<td align="left">ivb</td>
-<td align="right">5</td>
-<td align="right">0.1525</td>
-</tr>
 <tr class="odd">
 <td align="left">fetb</td>
 <td align="right">5</td>
-<td align="right">0.1513</td>
+<td align="right">0.1533</td>
+</tr>
+<tr class="even">
+<td align="left">jedi</td>
+<td align="right">5</td>
+<td align="right">0.1533</td>
+</tr>
+<tr class="odd">
+<td align="left">ivb</td>
+<td align="right">5</td>
+<td align="right">0.1525</td>
 </tr>
 <tr class="even">
 <td align="left">sketch</td>
@@ -1236,24 +1246,14 @@ constraints:</p>
 <td align="right">0.1464</td>
 </tr>
 <tr class="odd">
-<td align="left">sab</td>
-<td align="right">5</td>
-<td align="right">0.1337</td>
+<td align="left">cm</td>
+<td align="right">2</td>
+<td align="right">0.1414</td>
 </tr>
 <tr class="even">
 <td align="left">jedi_mwoe</td>
-<td align="right">2</td>
-<td align="right">0.1272</td>
-</tr>
-<tr class="odd">
-<td align="left">mob</td>
-<td align="right">4</td>
-<td align="right">0.0687</td>
-</tr>
-<tr class="even">
-<td align="left">milp</td>
-<td align="right">2</td>
-<td align="right">0.0576</td>
+<td align="right">3</td>
+<td align="right">0.1349</td>
 </tr>
 </tbody>
 </table>
